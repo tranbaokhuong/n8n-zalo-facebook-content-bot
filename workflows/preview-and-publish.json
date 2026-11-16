@@ -1,5 +1,5 @@
 {
-  "name": "Xem trước & công khai",
+  "name": "Preview & publish",
   "nodes": [
     {
       "parameters": {
@@ -955,7 +955,7 @@
     },
     {
       "parameters": {
-        "content": "## Xem trước & công khai\n**/xemtruoc <số> [giờ]**: kiểm tra như /duyet → đăng ẨN Fanpage (album, published=false) + Zalo OA (status hide) → ghi `[ẨN fb= oa= h=]` vào Ghi chú (h = mã nội dung + ảnh) → xóa bản ẩn cũ → ảnh lưới + link. Có giờ: Trạng thái **Chờ công khai**.\n**/congkhai <số> [giờ|huy]**: bản ẩn phải khớp bài hiện tại (h). Không giờ: Fanpage is_published=true → (OK) Zalo OA article/update status show → Sheet **Đã đăng** + tin ĐÃ CÔNG KHAI. Có giờ: **Chờ công khai**; lượt 5 phút tự công khai khi đến giờ.\nTrạng thái vẫn **Chờ duyệt** sau /xemtruoc nên vẫn sửa được; sửa xong phải /xemtruoc lại.",
+        "content": "## Preview & publish\n**/xemtruoc <id> [time]**: same checks as /duyet → post HIDDEN to the Fanpage (album, published=false) + Zalo OA (status hide) → write `[ẨN fb= oa= h=]` in Notes (h = hash of text + images) → delete the old hidden copy → grid image + link. With a time: status **Chờ công khai** (waiting to publish).\n**/congkhai <id> [time|huy]**: the hidden copy must match the current post (h). No time: Fanpage is_published=true → (if OK) Zalo OA article/update status show → Sheet **Đã đăng** + \"PUBLISHED\" message. With a time: **Chờ công khai**; the 5-minute run publishes when due.\nStatus stays **Chờ duyệt** after /xemtruoc so the post can still be edited; after editing run /xemtruoc again.",
         "height": 260,
         "width": 900,
         "color": 6

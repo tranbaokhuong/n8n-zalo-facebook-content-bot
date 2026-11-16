@@ -1,5 +1,5 @@
 {
-  "name": "Đăng chéo đa kênh",
+  "name": "Cross-posting (Zalo OA + group)",
   "nodes": [
     {
       "parameters": {
@@ -253,7 +253,7 @@
     },
     {
       "parameters": {
-        "content": "## 1. Nhận bài & chuẩn bị\nĐược workflow **Tự động đăng** gọi sau khi đăng Fanpage thành công (bài thật, không phải chế độ test). Tách tiêu đề, đoạn mô tả, thân bài cho từng kênh.\nKênh nào đã có dấu **[OA✓]** / **[GMF✓]** trong Ghi chú thì bỏ qua (không đăng lặp).",
+        "content": "## 1. Receive the post & prepare\nCalled by **Auto-post** after a successful Fanpage post (real post, not test mode). Splits title, description and body for each channel.\nChannels already marked **[OA✓]** / **[GMF✓]** in Notes are skipped (no double posting).",
         "height": 620,
         "width": 640,
         "color": 7
@@ -269,7 +269,7 @@
     },
     {
       "parameters": {
-        "content": "## 2. Zalo OA – bài viết\nẢnh bìa OA: dùng **ảnh ngang 16:9 AI đã tạo** (cột Ảnh bìa OA, tạo khi /duyet hoặc /anhbia). Chưa có thì đặt ảnh vuông vào giữa, hai bên nền mờ. Lỗi nữa thì dùng ảnh gốc.\nĐăng bài viết lên OA. Lỗi thì chờ 30 giây, **thử lại đúng 1 lần**. Cần quyền **Quản lý bài viết**.",
+        "content": "## 2. Zalo OA – article\nOA cover: use the **16:9 landscape image** (column Ảnh bìa OA, set by /datanh, /dunganh or /anhbia). If missing, place the square image in the middle on a blurred background; if that fails too, use the original image.\nPublish the article on the OA. On error wait 60 seconds and **retry once**. Needs the **Manage articles** permission.\nAI places extra images under the matching numbered point; `[ảnh N]` lines in the post put image N exactly there.",
         "height": 620,
         "width": 2220,
         "color": 4
@@ -285,7 +285,7 @@
     },
     {
       "parameters": {
-        "content": "## 3. Nhóm Zalo GMF\nTải ảnh bài → đưa lên Zalo → gửi ảnh + nội dung + link Fanpage vào nhóm, kèm bảng tổng kết. Tin nào lỗi thì chờ 30 giây, **gửi lại đúng 1 lần**.",
+        "content": "## 3. GMF Zalo group\nUpload the post images to Zalo → send a numbered grid image + post + Fanpage link to the group, with a summary. A failed message is **resent once** after 30 seconds.",
         "height": 620,
         "width": 2140,
         "color": 5
@@ -301,7 +301,7 @@
     },
     {
       "parameters": {
-        "content": "## 4. Ghi kết quả & báo lỗi\nGhi chú: kênh thành công đánh dấu [OA✓] [GMF✓], kênh lỗi ghi lý do. Thử lại vẫn lỗi → báo lỗi về Zalo (workflow Báo lỗi).",
+        "content": "## 4. Save results & alert errors\nNotes: successful channels get [OA✓] [GMF✓], failed channels get the reason. Still failing after retry → alert to Zalo (Error alert workflow).",
         "height": 620,
         "width": 820,
         "color": 6

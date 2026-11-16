@@ -1,5 +1,5 @@
 {
-  "name": "Sửa bài từ Zalo",
+  "name": "Edit posts from Zalo",
   "nodes": [
     {
       "parameters": {
@@ -1055,7 +1055,7 @@
     },
     {
       "parameters": {
-        "content": "## 1. Nhận lệnh & kiểm tra\nKiểm tra bài tồn tại và đang Chờ duyệt; báo \"đang xử lý\" vào nhóm rồi chia nhánh chữ / ảnh.",
+        "content": "## 1. Receive command & check\nCheck the post exists and is pending approval; post \"processing\" to the group, then branch to text / image.",
         "height": 710,
         "width": 1700,
         "color": 7
@@ -1071,7 +1071,7 @@
     },
     {
       "parameters": {
-        "content": "## 2. Sửa chữ (/sua)\nModel rẻ sửa → model rẻ **tự kiểm tra** đã làm đủ yêu cầu chưa → thiếu thì **model xịn** sửa lại. Cập nhật Sheet và gửi bản mới vào nhóm (ảnh giữ nguyên).\nTrước khi ghi, bản cũ được lưu vào tab **Lịch sử sửa** (để /hoantac).",
+        "content": "## 2. Edit text (/sua)\nCheap model edits → cheap model **self-checks** the request was fully done → otherwise the **strong model** redoes it. Update the Sheet and send the new version to the group (images unchanged). `[ảnh N]` marker lines are kept.\nBefore writing, the old version is saved to the **edit history** tab (for /hoantac).",
         "height": 664,
         "width": 2280,
         "color": 5
@@ -1087,7 +1087,7 @@
     },
     {
       "parameters": {
-        "content": "## 3. Ảnh (/anh)\nLên ý tưởng ảnh theo yêu cầu → tạo ảnh (rẻ trước, lỗi thì Pro) → ghép logo + footer → cập nhật Sheet và gửi ảnh mới vào nhóm (chữ giữ nguyên).",
+        "content": "## 3. Image (/anh)\nPlan the image from the request → generate (cheap first, Pro on failure) → overlay logo + footer → update the Sheet and send the new image to the group (text unchanged).",
         "height": 694,
         "width": 3820,
         "color": 4
@@ -1573,7 +1573,7 @@
     },
     {
       "parameters": {
-        "content": "## 4. Hoàn tác (/hoantac <số> [chu|anh] [số bản])\nLưu bản đang dùng vào tab **Lịch sử sửa** → ghi bản được chọn vào Sheet → gửi lại vào nhóm. Không ghi số bản: về bản ngay trước. Có số bản: về thẳng bản đó (xem số bằng /lichsu).",
+        "content": "## 4. Undo (/hoantac <id> [chu|anh] [version])\nSave the current version to **edit history** → write the chosen version to the Sheet → resend to the group. No version number: back to the previous one. With a number: straight to that version (see numbers with /lichsu).",
         "height": 380,
         "width": 1700,
         "color": 4
@@ -1828,7 +1828,7 @@
     },
     {
       "parameters": {
-        "content": "## 5. Xem lịch sử (/lichsu <số> [chu|anh])\nĐánh số các bản chữ và ảnh của bài (số cố định, không đổi), gửi danh sách chữ và từng ảnh cũ kèm số bản vào nhóm. Sau đó gõ /hoantac <số> chu|anh <số bản> để về thẳng bản đó.",
+        "content": "## 5. History (/lichsu <id> [chu|anh])\nNumbers the text and image versions of a post (fixed numbers), sends the text list and each old image with its version number to the group. Then /hoantac <id> chu|anh <version> jumps straight to it.",
         "height": 340,
         "width": 1250,
         "color": 6

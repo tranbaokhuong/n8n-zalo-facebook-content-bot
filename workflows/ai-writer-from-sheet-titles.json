@@ -1,5 +1,5 @@
 {
-  "name": "AI viết bài theo tiêu đề trên Sheet (chờ duyệt)",
+  "name": "AI writer from Sheet titles (pending approval)",
   "nodes": [
     {
       "parameters": {
@@ -685,7 +685,7 @@
     },
     {
       "parameters": {
-        "content": "## 1. Hẹn giờ / lệnh Zalo & lấy tiêu đề\n**8h sáng**: lấy tiêu đề đầu tiên (từ trên xuống) chưa viết trong Sheet. **/tieude <tiêu đề>** (bot GMF gọi sang): ghi tiêu đề vào ô vàng và viết ngay. **/dstieude**: liệt kê hàng chờ. Hết tiêu đề → nhắn nhóm, không gọi AI.",
+        "content": "## 1. Schedule / Zalo command & pick a title\n**8 AM**: take the first unwritten title (top to bottom) in the Sheet. **/tieude <title>** (called from the GMF bot): write the title into the yellow cell and write the post right away. **/dstieude**: list the queue. No titles left → message the group, no AI call.",
         "height": 820,
         "width": 1390,
         "color": 7
@@ -701,7 +701,7 @@
     },
     {
       "parameters": {
-        "content": "## 2. AI viết bài\nGemini **model rẻ** viết trước; lỗi/quá tải thì chuyển **model dự phòng**. Tự xuống dòng, thêm emoji, gắn footer GOSTECH.",
+        "content": "## 2. AI writes the post\nGemini **cheap model** writes first; on error/overload it switches to the **fallback model**. Adds line breaks, emoji and the company footer.",
         "height": 740,
         "width": 906,
         "color": 5
@@ -717,7 +717,7 @@
     },
     {
       "parameters": {
-        "content": "## 3. Tạo & kiểm tra ảnh\nModel ảnh **rẻ** tạo ảnh theo 1 trong 6 bố cục. AI **tự kiểm tra** ảnh (khung thừa, sai chính tả); lỗi thì tạo lại bằng **model Pro**. Cuối cùng ghép logo GOS Academy + thanh hotline.",
+        "content": "## 3. Generate & check the image\nThe **cheap** image model draws in one of 6 layouts. AI **self-checks** the image (extra frames, typos); if it fails, redraw with the **Pro model**. Finally overlay the logo + hotline bar.",
         "height": 740,
         "width": 1060,
         "color": 4
@@ -733,7 +733,7 @@
     },
     {
       "parameters": {
-        "content": "## 4. Lưu & gửi duyệt qua Zalo\nTải ảnh lên Trang ở dạng ẩn để lấy link, ghi bài vào Sheet (**Chờ duyệt**), gửi ảnh + bài + hướng dẫn lệnh vào nhóm Zalo OA.",
+        "content": "## 4. Save & send for approval in Zalo\nUpload the image to the Page as unpublished to get a link, write the post to the Sheet (**Chờ duyệt** = pending approval), send image + post + command help to the Zalo OA group.",
         "height": 740,
         "width": 2050,
         "color": 6

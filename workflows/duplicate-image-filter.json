@@ -1,5 +1,5 @@
 {
-  "name": "Lọc ảnh trùng",
+  "name": "Duplicate image filter",
   "nodes": [
     {
       "parameters": {
@@ -84,7 +84,7 @@
     },
     {
       "parameters": {
-        "content": "## Lọc ảnh trùng\nVào: `cu` (ảnh đang có trong bài) + `moi` (ảnh vừa gửi).\nSo NỘI DUNG ảnh (Zalo nén lại nên link khác nhau dù cùng ảnh): thu nhỏ 17×16, so độ sáng từng điểm với điểm bên phải → 256 bit; khác ≤ 20 bit = trùng.\nRa: `trung` = [{moi: vị trí ảnh mới, nhom: cu|moi, vt: trùng với ảnh nào}].\nDùng bởi: Thêm ảnh, Dùng ảnh tự thiết kế, Đặt bộ ảnh.",
+        "content": "## Duplicate image filter\nInput: `cu` (images already in the post) + `moi` (newly sent images).\nCompares image CONTENT (Zalo recompresses, so links differ for the same image): resize to 17×16, compare each pixel's brightness with its right neighbour → 256 bits; ≤ 20 bits different = duplicate.\nOutput: `trung` = [{moi: index of the new image, nhom: cu|moi, vt: index it duplicates}].\nUsed by: Add images, Use self-designed image, Set image set.",
         "height": 220,
         "width": 520
       },

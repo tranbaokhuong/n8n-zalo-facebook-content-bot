@@ -1,5 +1,5 @@
 {
-  "name": "Lấy số liệu Ads GOSTECH01 vào Sheet",
+  "name": "Facebook Ads metrics to Sheet",
   "nodes": [
     {
       "parameters": {
@@ -393,7 +393,7 @@
     },
     {
       "parameters": {
-        "content": "## 1. Lấy dữ liệu từ Facebook Ads\nLấy chiến dịch, nhóm quảng cáo (target), số liệu chiến dịch và từng quảng cáo.",
+        "content": "## 1. Fetch Facebook Ads data\nFetch campaigns, ad sets (targeting), campaign and per-ad metrics.",
         "height": 530,
         "width": 1390,
         "color": 7
@@ -409,7 +409,7 @@
     },
     {
       "parameters": {
-        "content": "## 2. Gộp & ghi vào Sheet\nGộp 1 dòng/chiến dịch (chi tiêu, kết quả, chi phí/kết quả, chi tiết QC, target) rồi ghi vào tab tương ứng.",
+        "content": "## 2. Merge & write to the Sheet\nOne row per campaign (spend, results, cost per result, ad details, targeting), written to the matching tab.",
         "height": 530,
         "width": 1170,
         "color": 5
@@ -425,7 +425,7 @@
     },
     {
       "parameters": {
-        "content": "# LẤY SỐ LIỆU ADS GOSTECH01 VÀO SHEET\nMỗi giờ cập nhật tab **Hôm nay**, mỗi sáng 7h05 thêm số liệu ngày hôm qua vào tab **Hôm qua**. Đây là dữ liệu để AI chọn chủ đề viết bài.",
+        "content": "# FACEBOOK ADS METRICS TO SHEET\nUpdates the **Today** tab every hour and adds yesterday's metrics to the **Yesterday** tab at 7:05 AM. Used by the AI to pick topics.",
         "height": 200,
         "width": 900,
         "color": 3

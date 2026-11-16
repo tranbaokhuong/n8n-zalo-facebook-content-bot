@@ -1,5 +1,5 @@
 {
-  "name": "Dùng ảnh tự thiết kế",
+  "name": "Use self-designed image",
   "nodes": [
     {
       "parameters": {
@@ -663,7 +663,7 @@
     },
     {
       "parameters": {
-        "content": "## Dùng ảnh tự thiết kế\nLệnh **/dunganh <số>** (hoặc /anhtay) ghi trong phần ghi chú của ảnh gửi vào nhóm, hoặc gõ ngay sau khi gửi ảnh (trong 15 phút).\nẢnh **ngang** (rộng/cao ≥ 1.3) → **ảnh bìa Zalo OA**; ảnh **vuông/dọc** → **ảnh bài** (Fanpage + nhóm, chỉ khi Chờ duyệt).\nẢnh được tải ẩn lên Fanpage lấy link → bản cũ vào **Lịch sử sửa** → ghi Sheet → gửi xác nhận vào nhóm. Không dùng AI, không ghép logo/hotline.",
+        "content": "## Use a self-designed image\nCommand **/dunganh <id>** (or /anhtay) as the caption of an image sent to the group, or typed right after sending the image (within 15 minutes).\n**Landscape** image (width/height ≥ 1.3) → **Zalo OA cover** (also the main image if the post has none); **square/portrait** → **post image** (Fanpage + group, only while pending approval).\nThe image is uploaded unpublished to the Fanpage to get a link → old version to **edit history** → write to the Sheet → confirm in the group. No AI, no logo/hotline overlay.",
         "height": 760,
         "width": 4200,
         "color": 7

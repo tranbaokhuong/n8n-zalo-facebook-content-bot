@@ -1,5 +1,5 @@
 {
-  "name": "Đặt bộ ảnh",
+  "name": "Set image set",
   "nodes": [
     {
       "parameters": {
@@ -579,7 +579,7 @@
     },
     {
       "parameters": {
-        "content": "## Đặt bộ ảnh (/datanh <số>)\nGửi cả bộ ảnh vào nhóm rồi gõ **/datanh <số>** (hoặc gửi ảnh kèm ghi chú). Thay CẢ BỘ ảnh, dùng chung Fanpage + Zalo:\n- ảnh **vuông** đầu = ảnh chính (Link ảnh)\n- ảnh **ngang** đầu = ảnh bìa Zalo OA (`#tay`) + nằm trong album Fanpage (`#fb`, Zalo không lặp)\n- còn lại = Ảnh thêm. Lưu ảnh chính/bìa cũ vào tab Lịch sử sửa; xác nhận bằng 1 ảnh lưới.",
+        "content": "## Set the image set (/datanh <id>)\nSend the whole image set to the group, then type **/datanh <id>** (or send the images with that caption). Replaces the WHOLE set, shared by Fanpage + Zalo:\n- first **square** image = main image (Link ảnh)\n- first **landscape** image = Zalo OA cover (`#tay`) + included in the Fanpage album (`#fb`, not repeated on Zalo)\n- the rest = extra images. Old main/cover images are saved to the edit-history tab; confirmed with one grid image.",
         "height": 820,
         "width": 4040,
         "color": 7

@@ -508,7 +508,7 @@
     },
     {
       "parameters": {
-        "content": "## 1. Nhận tin trong nhóm & phân luồng\nChỉ nhận tin trong nhóm OA. Lệnh `/ads` → chuyển sang workflow **Zalo OA - Ads Image**. Link YouTube/TikTok → lấy token, báo \"đã nhận link\".\nLệnh `/tieude <tiêu đề>`, `/dstieude` → workflow **AI viết bài theo tiêu đề**.\nLệnh `/anhbia <số> [yêu cầu]` → workflow **Tạo ảnh bìa Zalo OA**.\nẢnh gửi kèm ghi chú `/dunganh <số>` (hoặc gõ sau khi gửi ảnh) → workflow **Dùng ảnh tự thiết kế**.\n`/themanh <số>`, `/xoaanh <số> <n|het>` → workflow **Thêm ảnh cho bài** (1 bài nhiều ảnh).",
+        "content": "## 1. Receive group messages & route\nOnly messages in the OA group. `/ads` → **Zalo OA - Ads Image**. YouTube/TikTok link → get token, reply \"link received\".\n`/tieude <title>`, `/dstieude` → **AI writer from Sheet titles**.\n`/anhbia <id> [request]` → **Zalo OA cover image**.\nImage with caption `/dunganh <id>` (or typed after sending) → **Use self-designed image**.\n`/themanh`, `/xoaanh`, `/xepanh`, `/xemanh` → **Add images to post**. `/datanh` → **Set image set**. `/xemtruoc`, `/congkhai` → **Preview & publish**.",
         "height": 1080,
         "width": 1684,
         "color": 5
@@ -524,7 +524,7 @@
     },
     {
       "parameters": {
-        "content": "## 2. Lấy lời thoại video (Supadata)\nVideo dài thì Supadata trả mã chờ: đợi 10 giây rồi hỏi lại, tối đa ~5 phút. Không có lời thoại → báo lỗi vào nhóm.",
+        "content": "## 2. Get the video transcript (Supadata)\nFor long videos Supadata returns a job id: wait 10 seconds and poll again, up to ~5 minutes. No transcript → error message to the group.",
         "height": 1080,
         "width": 1140,
         "color": 4
@@ -540,7 +540,7 @@
     },
     {
       "parameters": {
-        "content": "## 3. Viết bài (Gemini)\nKey miễn phí trước (gemini-2.5-flash), hết lượt → **Create Content Paid** (key trả phí, gemini-3.8-flash).",
+        "content": "## 3. Write the post (Gemini)\nFree key first, quota exhausted → **Create Content Paid** (paid key).",
         "height": 1080,
         "width": 660,
         "color": 6
@@ -556,7 +556,7 @@
     },
     {
       "parameters": {
-        "content": "## 4. Ghi bài vào Sheet & gửi nhóm duyệt\nBài viết từ video được ghi thành 1 dòng **Chờ duyệt** trên Sheet lịch đăng (ô vàng trống đầu tiên, hết ô vàng thì thêm dòng mới), **không tạo ảnh**. Gửi vào nhóm: số bài + nội dung (chia tin nếu dài quá 1900 ký tự) + hướng dẫn thêm ảnh (/dunganh, /themanh, /anhbia) rồi /duyet.",
+        "content": "## 4. Write the post to the Sheet & send for approval\nThe post written from the video becomes one **Chờ duyệt** (pending approval) row in the schedule Sheet (first empty yellow row, otherwise a new row), **no image generated**. Sent to the group: post id + content (split if longer than 1900 characters) + how to add images (/datanh, /dunganh, /themanh, /anhbia) and then /duyet.",
         "height": 1080,
         "width": 1396,
         "color": 3
@@ -1623,7 +1623,7 @@
     },
     {
       "parameters": {
-        "content": "## 5. Nhập bài tự viết (/baimoi)\n`/baimoi` + xuống dòng + bài (cùng 1 tin): dòng đầu = tiêu đề, **không qua AI**, gắn chữ ký GOSTECH → 1 dòng **Chờ duyệt** (ô vàng hoặc dòng mới) → báo nhóm \"BÀI #số ĐÃ NHẬP\". Có ảnh gửi kèm / gửi trước 15 phút → gọi workflow Dùng ảnh tự thiết kế để gắn ảnh bài.",
+        "content": "## 5. Import a self-written post (/baimoi)\n`/baimoi` + new line + post (same message): first line = title, **no AI**, company footer added → one **Chờ duyệt** row (yellow row or new row) → \"POST #id IMPORTED\" message. Images sent with it / within the previous 15 minutes → **Set image set** for the whole set.",
         "height": 640,
         "width": 2400,
         "color": 5
@@ -1935,7 +1935,7 @@
     },
     {
       "parameters": {
-        "content": "## Ảnh chờ 15 phút\nẢnh gửi vào nhóm không kèm lệnh → **Lưu ảnh chờ** (Data Table `anh_cho_zalo`, mỗi ảnh 1 dòng: gửi nhiều ảnh cùng lúc không mất ảnh).\nLệnh /datanh /themanh /dunganh /baimoi /tieude → **Đọc ảnh chờ** → **Gộp ảnh chờ** (ảnh trong 15 phút, theo thứ tự gửi) → xóa ảnh đã dùng.",
+        "content": "## Pending images (15 minutes)\nImages sent to the group without a command → **Lưu ảnh chờ** (Data Table `anh_cho_zalo`, one row per image: several images sent at once are not lost).\nCommands /datanh /themanh /dunganh /baimoi /tieude → **Đọc ảnh chờ** (read) → **Gộp ảnh chờ** (images from the last 15 minutes, in sending order) → delete the used images.",
         "height": 200,
         "width": 700,
         "color": 6

@@ -1,5 +1,5 @@
 {
-  "name": "Tạo ảnh bìa Zalo OA",
+  "name": "Zalo OA cover image",
   "nodes": [
     {
       "parameters": {
@@ -680,7 +680,7 @@
     },
     {
       "parameters": {
-        "content": "## 1. Nhận lệnh\nLệnh **/anhbia <số> [yêu cầu]** (quản lý tự gõ trước khi /duyet). Chỉ làm cho bài Chờ duyệt / Chờ đăng có ảnh.",
+        "content": "## 1. Receive command\nCommand **/anhbia <id> [request]**. Only for posts pending approval / scheduled that have an image.",
         "height": 620,
         "width": 1500,
         "color": 7
@@ -696,7 +696,7 @@
     },
     {
       "parameters": {
-        "content": "## 2. AI dàn lại ảnh ngang 16:9\nĐưa ảnh vuông đã duyệt cho model rẻ vẽ lại bố cục ngang (chữ trái, hình phải, không vẽ logo/hotline) → AI kiểm tra chữ → lỗi thì vẽ lại bằng model xịn → code ghép logo GOS + thanh hotline.",
+        "content": "## 2. AI re-lays the image as 16:9 landscape\nThe approved square image goes to the cheap model to redraw a landscape layout (text left, picture right, no logo/hotline) → AI checks the text → redraw with the strong model on failure → code overlays the logo + hotline bar.",
         "height": 620,
         "width": 1540,
         "color": 4
@@ -712,7 +712,7 @@
     },
     {
       "parameters": {
-        "content": "## 3. Lưu & xem trước\nTải ảnh ẩn lên Fanpage lấy link → ghi cột **Ảnh bìa OA** trên Sheet → gửi ảnh vào nhóm Zalo để quản lý xem. Lúc 19:30 workflow Đăng chéo dùng ảnh này làm ảnh bìa OA.\nẢnh bìa cũ được lưu vào tab **Lịch sử sửa** (Loại: Ảnh bìa) → dùng /lichsu <số> bia, /hoantac <số> bia [số bản].",
+        "content": "## 3. Save & preview\nUpload the image unpublished to the Fanpage to get a link → write column **Ảnh bìa OA** in the Sheet → send it to the Zalo group for review. Cross-posting uses it as the OA cover.\nThe old cover is saved to **edit history** (type: cover) → /lichsu <id> bia, /hoantac <id> bia [version].",
         "height": 620,
         "width": 2220,
         "color": 5

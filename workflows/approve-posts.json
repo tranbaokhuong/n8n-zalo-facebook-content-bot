@@ -1,5 +1,5 @@
 {
-  "name": "Duyệt bài từ Zalo",
+  "name": "Approve posts from Zalo",
   "nodes": [
     {
       "parameters": {
@@ -230,7 +230,7 @@
     },
     {
       "parameters": {
-        "content": "## Nhận lệnh, kiểm tra & cập nhật\nChỉ đổi bài đang **Chờ duyệt**: duyệt → **Chờ đăng**, bỏ → **Đã bỏ**. Ghi lại thời điểm vào cột Ghi chú và trả lời trong nhóm.\n**/duyet** là bước chốt cuối: chỉ duyệt khi bài đã có ảnh bìa Zalo OA (tạo bằng /anhbia) làm từ đúng ảnh hiện tại.",
+        "content": "## Receive command, check & update\nOnly changes posts that are **Chờ duyệt** (pending approval): approve → **Chờ đăng** (scheduled), drop → **Đã bỏ** (dropped). Logs the time in Notes and replies in the group.\n**/duyet** is the final step: approval only when the post has a main image and a Zalo OA cover made from the current image.",
         "height": 494,
         "width": 1610,
         "color": 7

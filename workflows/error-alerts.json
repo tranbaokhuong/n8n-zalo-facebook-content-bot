@@ -1,5 +1,5 @@
 {
-  "name": "Báo lỗi về Zalo",
+  "name": "Error alerts to Zalo",
   "nodes": [
     {
       "parameters": {},
@@ -82,7 +82,7 @@
     },
     {
       "parameters": {
-        "content": "## Báo lỗi về nhóm Zalo\nKhi bất kỳ workflow nào của hệ thống (AI viết bài, Duyệt, Sửa, Tự động đăng, bot GMF, Token, Ads Image) **bị lỗi dừng giữa chừng**, n8n gọi workflow này: gửi tên workflow, node lỗi, nội dung lỗi và số lần chạy vào nhóm Zalo.\nĐược gắn ở **Settings → Error workflow** của từng workflow.",
+        "content": "## Error alerts to the Zalo group\nWhen any workflow of the system (AI writer, Approve, Edit, Auto-post, GMF bot, Token, Ads Image) **stops with an error**, n8n calls this workflow: it sends the workflow name, failing node, error message and execution id to the Zalo group.\nSet in **Settings → Error workflow** of each workflow.",
         "height": 390,
         "width": 900,
         "color": 3

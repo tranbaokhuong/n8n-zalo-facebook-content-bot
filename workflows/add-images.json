@@ -1,5 +1,5 @@
 {
-  "name": "Thêm ảnh cho bài",
+  "name": "Add images to post",
   "nodes": [
     {
       "parameters": {
@@ -433,7 +433,7 @@
     },
     {
       "parameters": {
-        "content": "## Thêm ảnh cho bài (1 bài nhiều ảnh)\n**/themanh <số>**: thêm các ảnh vừa gửi vào nhóm (15 phút, gửi nhiều ảnh/file một lúc được). **/xoaanh <số> <n|het>**: bỏ ảnh thêm.\nẢnh 1 = ảnh chính (cột Link ảnh), ảnh 2.. lưu cột **Ảnh thêm** (mỗi dòng 1 link, tối đa 9). Lúc đăng: Fanpage đăng album, Zalo OA chèn vào thân bài, nhóm gửi đủ ảnh.",
+        "content": "## Add images to a post (multi-image posts)\n**/themanh <id>**: add the images just sent to the group (15 minutes, several images/files at once). **/xoaanh <id> <n|het>**: remove extra images. **/xepanh <id> <order>**: reorder. **/xemanh <id>**: view the set.\nImage 1 = main image (column Link ảnh), images 2.. in column **Ảnh thêm** (one link per line, max 9). If the post has no main image/cover yet, the first square/landscape image fills them. When posting: Fanpage album, Zalo OA images in the body, group gets a grid image.",
         "height": 760,
         "width": 3560,
         "color": 7

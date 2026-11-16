@@ -1,5 +1,5 @@
 {
-  "name": "Ghép ảnh xem trước (lưới)",
+  "name": "Preview grid image",
   "nodes": [
     {
       "parameters": {
@@ -286,7 +286,7 @@
     },
     {
       "parameters": {
-        "content": "## Ghép ảnh xem trước (lưới)\nZalo chỉ hiện **1 ảnh mỗi tin nhắn nhóm**, nên gộp nhiều ảnh của 1 bài thành 1 ảnh lưới có số thứ tự (1, 2, 3…) rồi tải lên Zalo.\nVào: `urls` (tối đa 10), `oa_id`. Ra: `attachment_id`, `soAnh`.\nĐược gọi từ: Thêm ảnh cho bài, Đăng chéo đa kênh.",
+        "content": "## Preview grid image\nZalo shows only **1 image per group message**, so the images of a post are merged into one numbered grid image (1, 2, 3…) and uploaded to Zalo.\nInput: `urls` (max 10), `oa_id`. Output: `attachment_id`, `soAnh` (image count).\nCalled from: Add images, Set image set, Cross-posting, Preview & publish.",
         "height": 220,
         "width": 520
       },

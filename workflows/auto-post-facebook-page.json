@@ -1,5 +1,5 @@
 {
-  "name": "Tự động đăng bài Fanpage GOS Academy",
+  "name": "Auto-post to Facebook Page",
   "nodes": [
     {
       "parameters": {
@@ -438,7 +438,7 @@
     },
     {
       "parameters": {
-        "content": "## 1. Hẹn giờ & lấy bài\nLấy bài **Chờ đăng** đã đến giờ (ô Thời gian đăng trống = đăng ngay), mỗi lần 1 bài. Tự thêm footer GOSTECH nếu bài chưa có. Có nút chạy thử bằng tay.",
+        "content": "## 1. Schedule & pick the post\nTake the **Chờ đăng** (scheduled) post whose time has come (empty post time = post now), one post per run. Adds the company footer if missing. Has a manual test trigger.",
         "height": 602,
         "width": 1042,
         "color": 7
@@ -454,7 +454,7 @@
     },
     {
       "parameters": {
-        "content": "## 2. Đăng lên fanpage\nCó ảnh → đăng ảnh kèm bài; không có ảnh → đăng bài chữ.",
+        "content": "## 2. Post to the Fanpage\nSeveral images → album (images uploaded unpublished, then feed with attached_media); one image → photo post; no image → text post. `[ảnh N]` marker lines are removed.",
         "height": 602,
         "width": 322,
         "color": 5
@@ -470,7 +470,7 @@
     },
     {
       "parameters": {
-        "content": "## 3. Ghi kết quả & báo Zalo\nThành công → Sheet **Đã đăng** + link, báo \"✅ Đã đăng\" vào nhóm. Lỗi → Sheet **Lỗi** + lý do, báo \"❌ Thất bại\".\nSau khi ghi Đã đăng: gọi workflow **Đăng chéo đa kênh** (Zalo OA, nhóm GMF).",
+        "content": "## 3. Save results & notify Zalo\nSuccess → Sheet **Đã đăng** (posted) + link. Error → Sheet **Lỗi** (error) + reason, \"❌ Failed\" message.\nAfter writing Posted: call **Cross-posting** (Zalo OA, GMF group).",
         "height": 670,
         "width": 1026,
         "color": 6
@@ -620,7 +620,7 @@
     },
     {
       "parameters": {
-        "content": "## 4. Nhắc trước giờ đăng\n**17:00**: còn bài **Chờ duyệt** → nhắc duyệt trước 19:30. **19:00**: báo bài #… sẽ đăng lúc 19:30 (gõ /bo để hủy); chưa có bài duyệt → báo tối nay không đăng.",
+        "content": "## 4. Reminders before posting time\n**17:00**: posts still pending approval → remind to approve before 19:30. **19:00**: announce post #… will go out at 19:30 (type /bo to cancel); nothing approved → announce no post tonight.",
         "height": 480,
         "width": 1160,
         "color": 4

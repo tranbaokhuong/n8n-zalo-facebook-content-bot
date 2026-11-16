@@ -634,7 +634,7 @@
     },
     {
       "parameters": {
-        "content": "## 1. Nhận lệnh\nBot GMF chuyển lệnh `/ads <mô tả>` sang đây. Lấy token Zalo, thiếu mô tả thì gửi hướng dẫn, đủ thì báo \"đã nhận\".",
+        "content": "## 1. Receive command\nThe GMF bot forwards `/ads <description>` here. Get the Zalo token; no description → send help, otherwise reply \"received\".",
         "height": 640,
         "width": 900,
         "color": 5
@@ -650,7 +650,7 @@
     },
     {
       "parameters": {
-        "content": "## 2. Viết content\nGemini viết bài quảng cáo + tiêu đề, lợi ích, nút cho ảnh.\nKey miễn phí trước, hết lượt → **Write Ads Paid**. Lỗi hẳn → báo \"AI quá tải\".",
+        "content": "## 2. Write the content\nGemini writes the ad copy + headline, benefits and button text for the image.\nFree key first, quota exhausted → **Write Ads Paid**. Hard failure → \"AI overloaded\" message.",
         "height": 640,
         "width": 520,
         "color": 4
@@ -666,7 +666,7 @@
     },
     {
       "parameters": {
-        "content": "## 3. Tạo ảnh + kiểm tra\n**Generate Image** vẽ bằng Nano Banana 2.1 (~870đ) theo khung bố cục (có `#quanly` thì gửi kèm ảnh quản lý).\nGemini Flash kiểm tra chính tả, vị trí tiêu đề/nút và khuôn mặt quản lý. Không đạt → **Generate Retry** vẽ lại 1 lần bằng 3 Pro Image (~3.500đ).",
+        "content": "## 3. Generate image + check\n**Generate Image** draws with the cheap image model following the layout frame (with `#quanly` a reference portrait is attached).\nGemini Flash checks spelling, headline/button placement and the face. Fails → **Generate Retry** redraws once with the Pro image model.",
         "height": 860,
         "width": 1160,
         "color": 6
@@ -682,7 +682,7 @@
     },
     {
       "parameters": {
-        "content": "## 4. Ghép thương hiệu + gửi nhóm\nĐẩy ảnh cho nút cách footer, ghép logo + footer, upload lên Zalo, gửi ảnh rồi gửi content kèm footer GOSTECH. Ảnh lỗi vẫn gửi kèm cảnh báo ⚠️.",
+        "content": "## 4. Brand overlay + send to the group\nMake room for the button above the footer, overlay logo + footer, upload to Zalo, send the image then the content with the company footer. A flawed image is still sent with a ⚠️ warning.",
         "height": 640,
         "width": 1380,
         "color": 3
