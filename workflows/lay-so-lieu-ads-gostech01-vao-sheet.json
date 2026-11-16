@@ -1,0 +1,585 @@
+{
+  "name": "Lấy số liệu Ads GOSTECH01 vào Sheet",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c0000000-0000-4000-8000-000000000001",
+      "name": "Mỗi giờ"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7,
+              "triggerAtMinute": 5
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        208
+      ],
+      "id": "c0000000-0000-4000-8000-000000000002",
+      "name": "Mỗi sáng 7h"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Xác định lấy số liệu hôm nay hay hôm qua\nlet daily = false;\ntry { daily = $('Mỗi sáng 7h').isExecuted; } catch (e) {}\nreturn [{ json: { preset: daily ? 'yesterday' : 'today' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        112
+      ],
+      "id": "c0000000-0000-4000-8000-000000000003",
+      "name": "Cấu hình"
+    },
+    {
+      "parameters": {
+        "graphApiVersion": "v23.0",
+        "node": "act_<AD_ACCOUNT_ID>",
+        "edge": "campaigns",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "fields",
+                "value": "name,effective_status,daily_budget,lifetime_budget"
+              },
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        448,
+        112
+      ],
+      "id": "c0000000-0000-4000-8000-000000000004",
+      "name": "Lấy chiến dịch",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Ads"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "graphApiVersion": "v23.0",
+        "node": "act_<AD_ACCOUNT_ID>",
+        "edge": "adsets",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "fields",
+                "value": "name,campaign_id,effective_status,daily_budget,targeting"
+              },
+              {
+                "name": "limit",
+                "value": "300"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        672,
+        112
+      ],
+      "id": "c0000000-0000-4000-8000-000000000005",
+      "name": "Lấy nhóm quảng cáo",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Ads"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "graphApiVersion": "v23.0",
+        "node": "act_<AD_ACCOUNT_ID>",
+        "edge": "insights",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "level",
+                "value": "campaign"
+              },
+              {
+                "name": "date_preset",
+                "value": "={{ $('Cấu hình').first().json.preset }}"
+              },
+              {
+                "name": "fields",
+                "value": "campaign_id,campaign_name,spend,impressions,clicks,actions"
+              },
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        880,
+        112
+      ],
+      "id": "c0000000-0000-4000-8000-000000000006",
+      "name": "Số liệu chiến dịch",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Ads"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "graphApiVersion": "v23.0",
+        "node": "act_<AD_ACCOUNT_ID>",
+        "edge": "insights",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "level",
+                "value": "ad"
+              },
+              {
+                "name": "date_preset",
+                "value": "={{ $('Cấu hình').first().json.preset }}"
+              },
+              {
+                "name": "fields",
+                "value": "campaign_id,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,actions"
+              },
+              {
+                "name": "limit",
+                "value": "500"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        1104,
+        112
+      ],
+      "id": "c0000000-0000-4000-8000-000000000007",
+      "name": "Số liệu quảng cáo",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Ads"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d8",
+              "leftValue": "={{ $('Cấu hình').first().json.preset }}",
+              "rightValue": "today",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1520,
+        112
+      ],
+      "id": "c0000000-0000-4000-8000-000000000008",
+      "name": "Hôm nay?"
+    },
+    {
+      "parameters": {
+        "operation": "clear",
+        "documentId": {
+          "__rl": true,
+          "value": "1jnL0QmkrYF1sjiH8e17J0y8qfwjfcH_iDxnKl671QlE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Hôm nay",
+          "mode": "name"
+        },
+        "keepFirstRow": true
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        1744,
+        0
+      ],
+      "id": "c0000000-0000-4000-8000-000000000009",
+      "name": "Xóa tab Hôm nay",
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gộp số liệu Facebook thành 1 dòng cho mỗi chiến dịch\nconst preset = $('Cấu hình').first().json.preset;\nconst get = (n) => { try { return $(n).first().json.data || []; } catch (e) { return []; } };\nconst campaigns = get('Lấy chiến dịch');\nconst adsets = get('Lấy nhóm quảng cáo');\nconst insC = get('Số liệu chiến dịch');\nconst insA = get('Số liệu quảng cáo');\n\nconst zone = 'Asia/Ho_Chi_Minh';\nconst now = DateTime.now().setZone(zone);\nconst day = preset === 'yesterday' ? now.minus({ days: 1 }) : now;\nconst ngay = day.toFormat('dd/MM/yyyy');\nconst fmt = (n) => Math.round(Number(n) || 0).toLocaleString('vi-VN');\n\nfunction results(actions) {\n  const m = {};\n  (actions || []).forEach(a => { m[a.action_type] = Number(a.value) || 0; });\n  const msg = m['onsite_conversion.messaging_conversation_started_7d'] || 0;\n  const lead = m['lead'] !== undefined ? m['lead']\n    : (m['onsite_conversion.lead_grouped'] || 0) + (m['offsite_conversion.fb_pixel_lead'] || 0);\n  return { msg, lead, total: msg + lead };\n}\n\nfunction names(obj) {\n  const out = [];\n  Object.values(obj || {}).forEach(arr => Array.isArray(arr) && arr.forEach(x => x && x.name && out.push(x.name)));\n  return out;\n}\n\nfunction targetText(t) {\n  if (!t) return '';\n  const p = [];\n  if (t.age_min) p.push(`${t.age_min}-${t.age_max || 65}`);\n  if (t.genders && t.genders.length) p.push(t.genders.map(g => g == 1 ? 'Nam' : 'Nữ').join('/'));\n  const geo = t.geo_locations || {};\n  const locs = [...(geo.countries || []), ...(geo.regions || []).map(r => r.name), ...(geo.cities || []).map(c => c.name)];\n  if (locs.length) p.push('Vị trí: ' + locs.join(', '));\n  (t.flexible_spec || []).forEach((g, i) => { const n = names(g); if (n.length) p.push(`Group ${i + 1}: ` + n.join(', ')); });\n  const ex = names(t.exclusions);\n  if (ex.length) p.push('Loại trừ: ' + ex.join(', '));\n  if (t.custom_audiences && t.custom_audiences.length) p.push('Tệp: ' + t.custom_audiences.map(a => a.name).join(', '));\n  if (t.excluded_custom_audiences && t.excluded_custom_audiences.length) p.push('Loại trừ tệp: ' + t.excluded_custom_audiences.map(a => a.name).join(', '));\n  if (t.targeting_automation && t.targeting_automation.advantage_audience) p.push('Advantage+');\n  return p.join(' | ');\n}\n\nconst insByC = {}; insC.forEach(r => { insByC[r.campaign_id] = r; });\nconst rows = [];\nfor (const c of campaigns) {\n  const ins = insByC[c.id];\n  if (c.effective_status !== 'ACTIVE' && !ins) continue;\n  const cAdsets = adsets.filter(a => a.campaign_id === c.id && (a.effective_status === 'ACTIVE' || insA.some(x => x.adset_id === a.id)));\n  const cAds = insA.filter(x => x.campaign_id === c.id);\n  const budget = c.daily_budget ? Number(c.daily_budget)\n    : cAdsets.reduce((s, a) => s + (Number(a.daily_budget) || 0), 0);\n  const r = results(ins && ins.actions);\n  const spend = Number(ins && ins.spend) || 0;\n  rows.push({\n    'Khóa': `${ngay}|${c.id}`,\n    'Ngày': ngay,\n    'Chiến dịch': c.name,\n    'Trạng thái': c.effective_status,\n    'Ngân sách/ngày': budget ? fmt(budget) : '',\n    'Chi tiêu': fmt(spend),\n    'Hiển thị': Number(ins && ins.impressions) || 0,\n    'Click': Number(ins && ins.clicks) || 0,\n    'Tin nhắn': r.msg,\n    'Lead': r.lead,\n    'Tổng kết quả': r.total,\n    'Chi phí/kết quả': r.total ? fmt(spend / r.total) : '',\n    'Số nhóm QC': cAdsets.length,\n    'Số QC': new Set(cAds.map(x => x.ad_id)).size,\n    'Chi tiết QC': cAds.map(x => {\n      const k = results(x.actions);\n      return `${x.adset_name} > ${x.ad_name}: imp=${x.impressions || 0}, click=${x.clicks || 0}, spend=${Math.round(Number(x.spend) || 0)}, conversion=${k.total}`;\n    }).join('\\n'),\n    'Target': cAdsets.map(a => `${a.name}: ${targetText(a.targeting)}`).join('\\n'),\n    'Cập nhật lúc': now.toFormat('dd/MM/yyyy HH:mm'),\n  });\n}\nif (!rows.length) rows.push({ 'Khóa': `${ngay}|none`, 'Ngày': ngay, 'Chiến dịch': 'Không có chiến dịch nào chạy', 'Cập nhật lúc': now.toFormat('dd/MM/yyyy HH:mm') });\nreturn rows.map(json => ({ json }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        112
+      ],
+      "id": "c0000000-0000-4000-8000-000000000010",
+      "name": "Gộp số liệu"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d11",
+              "leftValue": "={{ $('Cấu hình').first().json.preset }}",
+              "rightValue": "today",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2192,
+        112
+      ],
+      "id": "c0000000-0000-4000-8000-000000000011",
+      "name": "Ghi vào tab nào?"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1jnL0QmkrYF1sjiH8e17J0y8qfwjfcH_iDxnKl671QlE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Hôm nay",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        2400,
+        0
+      ],
+      "id": "c0000000-0000-4000-8000-000000000012",
+      "name": "Ghi tab Hôm nay",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1jnL0QmkrYF1sjiH8e17J0y8qfwjfcH_iDxnKl671QlE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Hôm qua",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        2400,
+        208
+      ],
+      "id": "c0000000-0000-4000-8000-000000000013",
+      "name": "Ghi tab Hôm qua",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## 1. Lấy dữ liệu từ Facebook Ads\nLấy chiến dịch, nhóm quảng cáo (target), số liệu chiến dịch và từng quảng cáo.",
+        "height": 530,
+        "width": 1390,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        -192
+      ],
+      "id": "8693ad55-f867-4e39-b148-2295df7f2efd",
+      "name": "📌 1"
+    },
+    {
+      "parameters": {
+        "content": "## 2. Gộp & ghi vào Sheet\nGộp 1 dòng/chiến dịch (chi tiêu, kết quả, chi phí/kết quả, chi tiết QC, target) rồi ghi vào tab tương ứng.",
+        "height": 530,
+        "width": 1170,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1472,
+        -192
+      ],
+      "id": "9df5819b-b9dd-411e-9cfe-42ca1031d218",
+      "name": "📌 2"
+    },
+    {
+      "parameters": {
+        "content": "# LẤY SỐ LIỆU ADS GOSTECH01 VÀO SHEET\nMỗi giờ cập nhật tab **Hôm nay**, mỗi sáng 7h05 thêm số liệu ngày hôm qua vào tab **Hôm qua**. Đây là dữ liệu để AI chọn chủ đề viết bài.",
+        "height": 200,
+        "width": 900,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        -416
+      ],
+      "id": "87bd1c34-7821-4587-83ae-0841dfeb81b7",
+      "name": "📌 Tổng quan"
+    }
+  ],
+  "connections": {
+    "Mỗi giờ": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mỗi sáng 7h": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cấu hình": {
+      "main": [
+        [
+          {
+            "node": "Lấy chiến dịch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy chiến dịch": {
+      "main": [
+        [
+          {
+            "node": "Lấy nhóm quảng cáo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy nhóm quảng cáo": {
+      "main": [
+        [
+          {
+            "node": "Số liệu chiến dịch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Số liệu chiến dịch": {
+      "main": [
+        [
+          {
+            "node": "Số liệu quảng cáo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Số liệu quảng cáo": {
+      "main": [
+        [
+          {
+            "node": "Hôm nay?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hôm nay?": {
+      "main": [
+        [
+          {
+            "node": "Xóa tab Hôm nay",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gộp số liệu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Xóa tab Hôm nay": {
+      "main": [
+        [
+          {
+            "node": "Gộp số liệu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gộp số liệu": {
+      "main": [
+        [
+          {
+            "node": "Ghi vào tab nào?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghi vào tab nào?": {
+      "main": [
+        [
+          {
+            "node": "Ghi tab Hôm nay",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi tab Hôm qua",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "tags": []
+}

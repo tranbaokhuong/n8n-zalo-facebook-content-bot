@@ -1,0 +1,1374 @@
+{
+  "name": "Xem trước & công khai",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "name": "Khi được gọi",
+      "position": [
+        0,
+        0
+      ],
+      "id": "412ac535-8824-4d35-ab78-dcda09ad3972"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "name": "Mỗi 5 phút (công khai hẹn giờ)",
+      "position": [
+        0,
+        200
+      ],
+      "id": "45a3a508-3e9d-493d-a95a-0a2f1a1f42e4"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "oa_id",
+              "keyValue": "<ZALO_OA_ID>"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        100
+      ],
+      "id": "fc3ff73a-62b8-4cf5-88c2-32bac4d8a156",
+      "name": "Lấy token Zalo",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        440,
+        100
+      ],
+      "id": "b54f7ed8-acab-4be9-90e0-d07811203c78",
+      "name": "Đọc lịch đăng",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// /xemtruoc <số> [giờ]  -> act xemtruoc (đăng ẨN Fanpage + Zalo OA)\n// /congkhai <số> [giờ|huy] -> act congkhai (công khai ngay) | capnhat (hẹn giờ / bỏ hẹn)\n// Mỗi 5 phút: bài \"Chờ công khai\" đến giờ -> act congkhai\n// Bản ẩn lưu trong Ghi chú: [ẨN fb=<id> oa=<id> h=<mã nội dung+ảnh>]\nconst ZONE = 'Asia/Ho_Chi_Minh';\nconst GROUP = '<ZALO_GROUP_ID>', OA = '<ZALO_OA_ID>';\nlet cmd = null; try { if ($('Khi được gọi').isExecuted) cmd = $('Khi được gọi').first().json; } catch (e) {}\nconst rows = $('Đọc lịch đăng').all().map(i => i.json).filter(r => r && r['ID']);\nconst H = (s) => { let x = 5381; for (const ch of String(s || '')) x = ((x * 33) ^ ch.charCodeAt(0)) >>> 0; return x.toString(36); };\nconst maBai = (r) => H(['Nội dung', 'Link ảnh', 'Ảnh thêm', 'Ảnh bìa OA', 'Ảnh Zalo'].map(k => String(r[k] || '').trim()).join('|'));\nconst TAG = /\\s*\\|?\\s*\\[ẨN fb=(\\S*) oa=(\\S*) h=([a-z0-9]*)\\]/;\nconst st = (r) => String(r['Trạng thái'] || '').trim();\nconst now = DateTime.now().setZone(ZONE);\nconst nowS = now.toFormat('dd/MM/yyyy HH:mm');\nfunction docGio(s) {\n  s = String(s || '').toLowerCase().trim();\n  if (!s) return null;\n  if (/^(huy|hủy|xoa|xóa|bo|bỏ)$/.test(s)) return '';\n  const m = s.match(/(\\d{1,2})\\s*(?:h|giờ|g|:)\\s*(\\d{1,2})?/);\n  if (!m) return 'loi';\n  const Hh = +m[1], M = +(m[2] || 0);\n  if (Hh > 23 || M > 59) return 'loi';\n  const dm = s.match(/(\\d{1,2})\\s*[\\/\\-.]\\s*(\\d{1,2})(?:\\s*[\\/\\-.]\\s*(\\d{2,4}))?/);\n  let d = now;\n  if (dm) { const y = dm[3] ? (dm[3].length === 2 ? 2000 + +dm[3] : +dm[3]) : now.year; d = DateTime.fromObject({ year: y, month: +dm[2], day: +dm[1] }, { zone: ZONE }); if (!d.isValid) return 'loi'; }\n  else if (/mai/.test(s)) d = now.plus({ days: 1 });\n  let t = d.set({ hour: Hh, minute: M, second: 0, millisecond: 0 });\n  if (!dm && !/mai/.test(s) && t <= now.plus({ minutes: 1 })) t = t.plus({ days: 1 });\n  if (t <= now) return 'qua';\n  return t.toFormat('d/M/yyyy H:mm');\n}\nconst GIO_HD = 'Ví dụ giờ: \"20:15\" (hôm nay, qua rồi thì mai), \"20h\", \"9h30 mai\", \"8:00 16/11\".';\nfunction docThoiGian(v) { for (const f of ['d/M/yyyy H:mm', 'd/M/yyyy H:mm:ss', 'yyyy-MM-dd H:mm']) { const d = DateTime.fromFormat(String(v || '').trim(), f, { zone: ZONE }); if (d.isValid) return d; } return null; }\nconst tra = (reply) => [{ json: { act: 'traloi', reply, group_id: cmd?.group_id || GROUP } }];\nconst thongTin = (r) => { const m = String(r['Ghi chú'] || '').match(TAG); return m ? { fb: m[1], oa: m[2], h: m[3] } : null; };\n// ----- lượt 5 phút: công khai bài hẹn giờ đã đến giờ\nif (!cmd) {\n  const r = rows.find(r => st(r) === 'Chờ công khai' && docThoiGian(r['Thời gian đăng']) && docThoiGian(r['Thời gian đăng']) <= now);\n  if (!r) return [];\n  const t = thongTin(r); if (!t) return [];\n  return [{ json: { act: 'congkhai', id: String(r['ID']), row: r, fb: t.fb, oa: t.oa, group_id: GROUP, oa_id: OA, hen: true } }];\n}\nconst id = String(cmd.id);\nconst row = rows.find(r => String(r['ID']) === id);\nif (!row) return tra(`❌ Không tìm thấy bài #${id} trong lịch đăng.`);\nconst s0 = st(row);\nif (cmd.route === 'xemtruoc') {\n  if (s0 !== 'Chờ duyệt') return tra(`ℹ️ Bài #${id} đang \"${s0 || 'trống'}\". /xemtruoc chỉ dùng cho bài Chờ duyệt.`);\n  if (!String(row['Nội dung'] || '').trim()) return tra(`ℹ️ Bài #${id} chưa có nội dung.`);\n  if (!String(row['Link ảnh'] || '').trim()) return tra(`⚠️ Bài #${id} chưa có ảnh chính. Gửi ảnh rồi gõ /datanh ${id} (hoặc /dunganh ${id}).`);\n  const bia = String(row['Ảnh bìa OA'] || '').trim();\n  if (!bia) return tra(`⚠️ Bài #${id} chưa có ảnh bìa Zalo OA. Gửi 1 ảnh ngang + /dunganh ${id}, hoặc gõ /anhbia ${id}.`);\n  const src = (bia.match(/#src=([a-z0-9]+)/) || [])[1];\n  if (src && src !== H(String(row['Link ảnh']).trim())) return tra(`⚠️ Ảnh bìa Zalo OA của bài #${id} làm từ ảnh chính cũ. Gõ /anhbia ${id} để làm lại rồi /xemtruoc ${id}.`);\n  let gio = null;\n  if (cmd.gio) { gio = docGio(cmd.gio); if (gio === 'loi' || gio === '') return tra(`ℹ️ Chưa hiểu giờ \"${cmd.gio}\".\\n${GIO_HD}`); if (gio === 'qua') return tra(`ℹ️ Giờ \"${cmd.gio}\" đã qua rồi.`); }\n  const t = thongTin(row) || {};\n  return [{ json: { act: 'xemtruoc', id, row, gio, fbCu: t.fb || '', oaCu: t.oa || '', ma: maBai(row), group_id: cmd.group_id, oa_id: OA } }];\n}\n// ----- /congkhai\nif (!['Chờ duyệt', 'Chờ công khai'].includes(s0)) return tra(`ℹ️ Bài #${id} đang \"${s0 || 'trống'}\" nên không công khai được.`);\nconst t = thongTin(row);\nif (!t || !t.fb) return tra(`ℹ️ Bài #${id} chưa đăng ẩn để xem trước. Gõ /xemtruoc ${id} trước, xem ưng rồi mới /congkhai ${id}.\\n(Hoặc /duyet ${id} để đăng theo cách cũ.)`);\nif (t.h !== maBai(row)) return tra(`⚠️ Bài #${id} đã sửa chữ/ảnh sau lần xem trước nên bản ẩn đang cũ.\\n👀 Gõ /xemtruoc ${id} để đăng ẩn bản mới, xem lại rồi /congkhai ${id}.`);\nconst gio = docGio(cmd.gio);\nif (gio === 'loi') return tra(`ℹ️ Chưa hiểu giờ \"${cmd.gio}\".\\n${GIO_HD}\\nGõ /congkhai ${id} (công khai ngay) hoặc /congkhai ${id} huy (bỏ hẹn giờ).`);\nif (gio === 'qua') return tra(`ℹ️ Giờ \"${cmd.gio}\" đã qua rồi, chọn giờ khác (hoặc /congkhai ${id} để công khai ngay).`);\nconst ghi = (s) => `${String(row['Ghi chú'] || '').trim()} | ${s}`.replace(/^ \\| /, '');\nif (gio === '') {\n  if (s0 !== 'Chờ công khai') return tra(`ℹ️ Bài #${id} chưa hẹn giờ công khai.`);\n  return [{ json: { act: 'capnhat', id, row, group_id: cmd.group_id, update: { 'ID': id, 'Trạng thái': 'Chờ duyệt', 'Thời gian đăng': '', 'Ghi chú': ghi(`Bỏ hẹn công khai qua Zalo ${nowS}`) },\n    reply: `⏰ Đã bỏ hẹn giờ công khai bài #${id}. Bài vẫn đang ẩn (Chờ duyệt).\\n✅ Công khai: /congkhai ${id} [giờ] · ✏️ Sửa rồi /xemtruoc ${id} lại.` } }];\n}\nif (gio) return [{ json: { act: 'capnhat', id, row, group_id: cmd.group_id, update: { 'ID': id, 'Trạng thái': 'Chờ công khai', 'Thời gian đăng': gio, 'Ghi chú': ghi(`Hẹn công khai ${gio} qua Zalo ${nowS}`) },\n  reply: `⏰ Bài #${id} sẽ tự CÔNG KHAI lúc ${gio} (Fanpage + Zalo OA, có thể trễ tối đa ~5 phút).\\n🔁 Đổi giờ: /congkhai ${id} <giờ> · Công khai ngay: /congkhai ${id} · Bỏ hẹn: /congkhai ${id} huy · Bỏ bài: /bo ${id}` } }];\nreturn [{ json: { act: 'congkhai', id, row, fb: t.fb, oa: t.oa, group_id: cmd.group_id, oa_id: OA } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "name": "Xử lý lệnh",
+      "position": [
+        660,
+        100
+      ],
+      "id": "9f309a36-d9d0-4905-b5a5-9186d00828e0"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7c15ccd9",
+              "leftValue": "={{ $json.act === 'xemtruoc' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "name": "Xem trước?",
+      "position": [
+        880,
+        100
+      ],
+      "id": "f04896b2-7541-4659-9157-42fb1cea564e"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f4322016",
+              "leftValue": "={{ $json.act === 'congkhai' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "name": "Công khai?",
+      "position": [
+        1100,
+        300
+      ],
+      "id": "cd3a9eb1-f445-427a-a3fc-ee9d6667aed4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cc1ac258",
+              "leftValue": "={{ $json.act === 'capnhat' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "name": "Cập nhật hẹn giờ?",
+      "position": [
+        1320,
+        500
+      ],
+      "id": "8fb98d9f-36d6-4e0c-97c2-c7a68b80a45e"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Trạng thái",
+              "displayName": "Trạng thái",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Thời gian đăng",
+              "displayName": "Thời gian đăng",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ghi chú",
+              "displayName": "Ghi chú",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Post ID",
+              "displayName": "Post ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Link bài",
+              "displayName": "Link bài",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "value": {
+            "ID": "={{ $json.update['ID'] }}",
+            "Trạng thái": "={{ (() => { const u = $json.update || {}; const r = $('Xử lý lệnh').first().json.row || {}; const k = \"Trạng thái\"; return u[k] !== undefined ? u[k] : (r[k] !== undefined ? r[k] : ''); })() }}",
+            "Thời gian đăng": "={{ (() => { const u = $json.update || {}; const r = $('Xử lý lệnh').first().json.row || {}; const k = \"Thời gian đăng\"; return u[k] !== undefined ? u[k] : (r[k] !== undefined ? r[k] : ''); })() }}",
+            "Ghi chú": "={{ (() => { const u = $json.update || {}; const r = $('Xử lý lệnh').first().json.row || {}; const k = \"Ghi chú\"; return u[k] !== undefined ? u[k] : (r[k] !== undefined ? r[k] : ''); })() }}",
+            "Post ID": "={{ (() => { const u = $json.update || {}; const r = $('Xử lý lệnh').first().json.row || {}; const k = \"Post ID\"; return u[k] !== undefined ? u[k] : (r[k] !== undefined ? r[k] : ''); })() }}",
+            "Link bài": "={{ (() => { const u = $json.update || {}; const r = $('Xử lý lệnh').first().json.row || {}; const k = \"Link bài\"; return u[k] !== undefined ? u[k] : (r[k] !== undefined ? r[k] : ''); })() }}"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        1540,
+        420
+      ],
+      "id": "49dadea6-0c00-458c-8f28-85e0fbd050a5",
+      "name": "Ghi hẹn giờ",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Xử lý lệnh').first().json.group_id }, message: { text: $('Xử lý lệnh').first().json.reply } }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "name": "Trả lời",
+      "position": [
+        1760,
+        600
+      ],
+      "id": "74809d44-590d-4e37-a1a5-4d6df53a6bd0"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Xử lý lệnh').first().json.group_id }, message: { text: '⏳ Đang đăng ẨN bài #' + $('Xử lý lệnh').first().json.id + ' lên Fanpage + Zalo OA để xem trước (khoảng 1–2 phút)...' } }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "name": "Báo đang đăng ẩn",
+      "position": [
+        1100,
+        -600
+      ],
+      "id": "0377138d-7e93-4085-99ac-0323054a03d9"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Dữ liệu bài từ Sheet (giống Tự động đăng): nội dung + chữ ký; Fanpage bỏ dòng [ảnh N]\nconst x = $('Xử lý lệnh').first().json; const r = x.row;\nconst FOOTER = \"---***---\\nCÔNG TY TNHH GOSTECH\\nGiải pháp phát triển doanh nghiệp\\n📍 Trụ sở chính: Số nhà 11, ngõ 245/116/27 Phố Định Công, Phường Định Công, Hà Nội\\n📍 Văn phòng: Tòa A3 Vinhomes Hàm Nghi, Phường Từ Liêm, Hà Nội\\n📞 Hotline: 0968 343 342\\n🌐 Website: gostech.vn | hocviendigital.vn\";\nconst s0 = String(r['Nội dung'] || '').trim();\nconst noiDung = s0.includes('CÔNG TY TNHH GOSTECH') ? s0 : s0 + '\\n\\n' + FOOTER;\nconst MK = /^\\[\\s*(?:ảnh|anh|hình|hinh)\\s*([0-9][0-9 ,+&và]*)\\]$/iu;\nconst noiDungFb = noiDung.split('\\n').filter(l => !MK.test(l.trim())).join('\\n').replace(/\\n{3,}/g, '\\n\\n');\nreturn [{ json: { id: Number(x.id), noiDung, noiDungFb, linkAnh: String(r['Link ảnh'] || '').trim(), 'Ảnh thêm': String(r['Ảnh thêm'] || '').trim(),\n  anhThem: String(r['Ảnh thêm'] || '').trim(), anhBia: String(r['Ảnh bìa OA'] || '').trim(), anhZalo: String(r['Ảnh Zalo'] || '').trim(), note: '', oa_id: x.oa_id, group_id: x.group_id } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "name": "Dữ liệu bài",
+      "position": [
+        1320,
+        -400
+      ],
+      "id": "9911fcce-a6dd-45bc-816c-91c5ac99cd39"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ảnh chính + ảnh thêm (tối đa 10) -> mỗi ảnh 1 item để tải ẩn lên Trang.\n// Ảnh NGANG xếp lên đầu (Facebook đặt ảnh đầu tiên to ở trên: kiểu 1 ngang + 2-3 vuông)\nconst p = $input.first().json;\n// ảnh thêm gắn #zalo chỉ dùng cho Zalo -> bỏ; #fb chỉ dùng cho Fanpage -> giữ (bỏ nhãn)\nconst all = [p.linkAnh, ...String(p['Ảnh thêm'] || '').split('\\n').map(s => s.trim()).filter(s => s && !/#zalo$/i.test(s)).map(s => s.replace(/#fb$/i, ''))].filter(Boolean).slice(0, 10);\nfunction size(b) {\n  if (b[0] === 0x89 && b[1] === 0x50) return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };            // PNG\n  if (b.toString('ascii', 0, 3) === 'GIF') return { width: b.readUInt16LE(6), height: b.readUInt16LE(8) };          // GIF\n  if (b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP') {                             // WebP\n    const t = b.toString('ascii', 12, 16);\n    if (t === 'VP8X') return { width: 1 + b.readUIntLE(24, 3), height: 1 + b.readUIntLE(27, 3) };\n    if (t === 'VP8 ') return { width: b.readUInt16LE(26) & 0x3fff, height: b.readUInt16LE(28) & 0x3fff };\n    if (t === 'VP8L') { const n = b.readUInt32LE(21); return { width: (n & 0x3fff) + 1, height: ((n >> 14) & 0x3fff) + 1 }; }\n  }\n  if (b[0] === 0xff && b[1] === 0xd8) {                                                                              // JPEG: tìm khung SOF\n    let i = 2;\n    while (i < b.length - 9) {\n      if (b[i] !== 0xff) { i++; continue; }\n      const m = b[i + 1];\n      if (m >= 0xc0 && m <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(m)) return { width: b.readUInt16BE(i + 7), height: b.readUInt16BE(i + 5) };\n      if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; }\n      i += 2 + b.readUInt16BE(i + 2);\n    }\n  }\n  return null;\n}\nconst items = [];\nfor (const [i, url] of all.entries()) {\n  let r = 1;\n  try { const b = Buffer.from(await this.helpers.httpRequest({ method: 'GET', url, encoding: 'arraybuffer', json: false })); const s = size(b); if (s && s.height) r = s.width / s.height; } catch (e) {}\n  items.push({ url, i, ngang: r >= 1.3 });\n}\nitems.sort((a, b) => (b.ngang - a.ngang) || (a.i - b.i));\nreturn items.map(x => ({ json: { url: x.url, ngang: x.ngang } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -400
+      ],
+      "id": "eb534178-05f5-40bb-a4b6-c3bc16b332e2",
+      "name": "DS ảnh album"
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "POST",
+        "graphApiVersion": "v23.0",
+        "node": "<FACEBOOK_PAGE_ID>",
+        "edge": "photos",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "url",
+                "value": "={{ $json.url }}"
+              },
+              {
+                "name": "published",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        -400
+      ],
+      "id": "3baf4dfd-b4cd-46e7-bc85-296fb82f6a3a",
+      "name": "Tải ảnh album (ẩn)",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Graph API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const p = $('Dữ liệu bài').first().json;\nconst ids = $input.all().map(i => i.json.id).filter(Boolean);\nreturn [{ json: { noiDung: p.noiDungFb, published: 'false', attached: JSON.stringify(ids.map(id => ({ media_fbid: id }))) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "name": "Gộp album (ẩn)",
+      "position": [
+        1980,
+        -400
+      ],
+      "id": "2cb68bd4-5675-4878-bad3-8628c5537b11"
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "POST",
+        "graphApiVersion": "v23.0",
+        "node": "<FACEBOOK_PAGE_ID>",
+        "edge": "feed",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "message",
+                "value": "={{ $json.noiDung }}"
+              },
+              {
+                "name": "attached_media",
+                "value": "={{ $json.attached }}"
+              },
+              {
+                "name": "published",
+                "value": "={{ $json.published }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        -400
+      ],
+      "id": "2f2a3080-070b-46fc-80e0-3133d8d7df68",
+      "name": "Fanpage: đăng ẩn",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Graph API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Chuẩn bị cho AI xếp ảnh: danh sách ý đánh số của bài + ảnh thêm dùng cho Zalo (tải về, gửi kèm cho AI nhìn)\nconst p = $('Dữ liệu bài').first().json;\nconst full = String(p.noiDung || '').replace(/\\r/g, '');\nconst than = full.split('---***---')[0];\nconst MK = /^\\[\\s*(?:ảnh|anh|hình|hinh)\\s*([0-9][0-9 ,+&và]*)\\]$/iu;   // dòng đánh dấu [ảnh 2] / [ảnh 2, 3]\nconst soMK = (l) => { const m = String(l || '').trim().match(MK); return m ? m[1].split(/[^0-9]+/).filter(Boolean).map(Number) : null; };\nconst boMK = (s) => String(s || '').split('\\n').filter(l => !soMK(l)).join('\\n').replace(/\\n{3,}/g, '\\n\\n');\nconst L0 = than.split('\\n').map(x => x.trim()).filter(Boolean).slice(1);\nconst daDanh = new Set(); L0.forEach(l => (soMK(l) || []).forEach(k => { if (k >= 2) daDanh.add(k - 2); }));\nconst L = L0.filter(l => !soMK(l));\nconst laY = (l) => /^(?:[^\\p{L}\\p{N}\\s]+\\s*)?([0-9]️?⃣|🔟|\\d{1,2}[.)]\\s)/u.test(l); // cho phép emoji đứng trước số (🔥 1️⃣ …)\nconst y = [];\nL.forEach((l, i) => { if (laY(l)) y.push(l + (L[i + 1] && !laY(L[i + 1]) ? ' – ' + L[i + 1] : '')); });\nconst sach = (u) => String(u || '').trim().replace(/#(fb|zalo|tay|src=[a-z0-9]+)$/i, '');\nconst them = String(p.anhThem || '').split('\\n').map(s => s.trim()).filter(Boolean).filter((s, i) => !/#fb$/i.test(s) && !daDanh.has(i)).map(sach).filter(Boolean);\nif (!them.length || !y.length) return [{ json: { canXep: false } }];\nconst parts = [{ text: 'Bài viết có các ý đánh số sau:\\n' + y.map((t, i) => `Ý ${i + 1}: ${t.slice(0, 220)}`).join('\\n')\n  + `\\n\\nDưới đây là ${them.length} ảnh minh họa (Ảnh 1..${them.length}). Với MỖI ảnh, chọn số ý mà ảnh minh họa rõ nhất (dựa vào chữ và hình trong ảnh). Nếu ảnh là ảnh tổng quan / không khớp riêng ý nào thì y = 0. Mỗi ý chỉ nhận tối đa 1 ảnh.` }];\nfor (const [i, u] of them.entries()) {\n  try {\n    const b = Buffer.from(await this.helpers.httpRequest({ method: 'GET', url: u, encoding: 'arraybuffer', json: false }));\n    parts.push({ text: `Ảnh ${i + 1}:` }, { inlineData: { mimeType: 'image/jpeg', data: b.toString('base64') } });\n  } catch (e) { parts.push({ text: `Ảnh ${i + 1}: (không tải được)` }); }\n}\nconst body = { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json',\n  responseSchema: { type: 'OBJECT', properties: { xep: { type: 'ARRAY', items: { type: 'OBJECT', properties: { anh: { type: 'INTEGER' }, y: { type: 'INTEGER' } }, required: ['anh', 'y'] } } }, required: ['xep'] } } };\nreturn [{ json: { canXep: true, soY: y.length, soAnh: them.length, body } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        -400
+      ],
+      "id": "15dcd335-7bcb-4867-9e2f-280965598283",
+      "name": "Chuẩn bị xếp ảnh"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cxa",
+              "leftValue": "={{ $json.canXep }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2640,
+        -400
+      ],
+      "id": "e33e0dc7-5690-466a-914e-3583f55927ca",
+      "name": "Cần xếp ảnh?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2860,
+        -560
+      ],
+      "id": "7be5ecc2-1e1f-4863-83ea-0507de1ba021",
+      "name": "AI xếp ảnh theo ý",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Chuẩn bị nội dung cho từng kênh từ bài vừa đăng Fanpage\n// Tiêu đề = DÒNG đầu tiên; mô tả = dòng kế tiếp (vẫn có trong thân bài); thân bài = từ dòng 2 trở đi\n// Ảnh cho Zalo: cột \"Ảnh Zalo\" (nếu có) thay ảnh chính; ảnh thêm gắn #fb chỉ dùng cho Fanpage, #zalo chỉ dùng cho Zalo\nconst p = $('Dữ liệu bài').first().json;\nconst full = String(p.noiDung || '').replace(/\\r/g, '').trim();\nconst cut = full.indexOf('---***---');\nconst than = cut >= 0 ? full.slice(0, cut) : full;\nconst footer = cut >= 0 ? full.slice(cut + 9) : '';\nconst lines = (s) => String(s).split('\\n').map(x => x.trim()).filter(Boolean);\nconst MK = /^\\[\\s*(?:ảnh|anh|hình|hinh)\\s*([0-9][0-9 ,+&và]*)\\]$/iu;   // dòng đánh dấu [ảnh 2] / [ảnh 2, 3]\nconst soMK = (l) => { const m = String(l || '').trim().match(MK); return m ? m[1].split(/[^0-9]+/).filter(Boolean).map(Number) : null; };\nconst boMK = (s) => String(s || '').split('\\n').filter(l => !soMK(l)).join('\\n').replace(/\\n{3,}/g, '\\n\\n');\nconst L = lines(than);\n// Ảnh đánh số như ảnh lưới: ảnh 1 = ảnh chính, ảnh 2.. = cột Ảnh thêm theo thứ tự (kể cả ảnh #fb)\nconst KR = String(p.anhThem || '').split('\\n').map(s => s.trim()).filter(Boolean);\nconst daDanh = new Set(); L.forEach(l => (soMK(l) || []).forEach(k => { if (k >= 2) daDanh.add(k - 2); }));\nconst title = (L[0] || `Bài #${p.id}`).replace(/\\s+/g, ' ').slice(0, 150);\n// bỏ dòng đánh dấu khỏi chữ, nhớ vị trí: truoc[i] = các số ảnh chèn trước dòng rest[i]\nlet rest = [], truoc = {};\nfor (const l of L.slice(1)) { const s = soMK(l); if (s) (truoc[rest.length] = truoc[rest.length] || []).push(...s); else rest.push(l); }\nlet desc = '';\nconst boDong0 = () => { const t = {}; for (const [k, v] of Object.entries(truoc)) { const j = Math.max(0, Number(k) - 1); (t[j] = t[j] || []).push(...v); } truoc = t; };\nif (rest[0] && rest[0].length <= 290) { desc = rest[0]; }   // dòng 2 = mô tả OA và VẪN giữ trong thân bài (quản lý yêu cầu 15/11)\nelse if (rest[0]) { const s = rest[0].slice(0, 280); desc = s.slice(0, Math.max(s.lastIndexOf(' '), 200)) + '…'; }\nconst esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst sach = (u) => String(u || '').trim().replace(/#(fb|zalo|tay|src=[a-z0-9]+)$/i, '');\nconst anhChinh = sach(p.anhZalo) || sach(p.linkAnh);\nconst anhThem = KR.filter((s, i) => !/#fb$/i.test(s) && !daDanh.has(i)).map(sach).filter(Boolean);   // ảnh chưa đánh dấu -> AI / tự xếp\n// Đặt ảnh: AI nhìn ảnh và chọn ý phù hợp -> ảnh ngay dưới ý đó; AI lỗi mà số ảnh = số ý -> lần lượt dưới từng ý; ảnh còn lại -> cuối bài\nconst laY = (l) => /^(?:[^\\p{L}\\p{N}\\s]+\\s*)?([0-9]️?⃣|🔟|\\d{1,2}[.)]\\s)/u.test(l); // cho phép emoji đứng trước số (🔥 1️⃣ …)\nconst yIdx = rest.map((l, i) => laY(l) ? i : -1).filter(i => i >= 0);\nlet gan = null;   // gan[i] = thứ tự ý (0..) của ảnh thêm i, -1 = cuối bài\ntry { if ($('AI xếp ảnh theo ý').isExecuted) {\n  const t = (($('AI xếp ảnh theo ý').first().json.candidates || [])[0]?.content?.parts || []).map(x => x.text || '').join('');\n  const v = JSON.parse(t); gan = anhThem.map(() => -1); const dung = new Set();\n  for (const x of v.xep || []) { const a = Number(x.anh) - 1, k = Number(x.y) - 1;\n    if (a >= 0 && a < anhThem.length && k >= 0 && k < yIdx.length && !dung.has(k) && gan[a] < 0) { gan[a] = k; dung.add(k); } }\n} } catch (e) { gan = null; }\nif (!gan && anhThem.length && yIdx.length === anhThem.length) gan = anhThem.map((_, i) => i);\n// AI không chạy/lỗi: chia đều ảnh cho các ý (mỗi ý tối đa 1 ảnh, dư thì cuối bài)\nif (!gan && anhThem.length && yIdx.length) gan = anhThem.map((_, a) => a < yIdx.length ? (anhThem.length <= yIdx.length ? Math.floor(a * yIdx.length / anhThem.length) : a) : -1);\nif (!gan) gan = anhThem.map(() => -1);\n// Bài không có ý đánh số: rải ảnh đều giữa bài, đặt ngay trước các dòng tiêu đề mục (dòng kết thúc bằng ? hoặc không có dấu chấm, hoặc viết hoa)\nlet raiDeu = null;\nif (!yIdx.length && anhThem.length && rest.length >= 3) {\n  const hoaT = (s) => { const c = s.replace(/[^\\p{L}]/gu, ''); return c.length >= 8 && c === c.toUpperCase(); };\n  const tieuDeMuc = (s) => s && (/[?:]$/.test(s) || hoaT(s) || (s.length <= 90 && !/[.!…]$/.test(s)));\n  const moc = []; for (let i = 1; i < rest.length - 1; i++) if (tieuDeMuc(rest[i + 1]) && !tieuDeMuc(rest[i])) moc.push(i);\n  raiDeu = {}; const daDung = new Set();\n  anhThem.forEach((u, a) => {\n    let i = Math.min(rest.length - 2, Math.round((a + 1) * rest.length / (anhThem.length + 1)) - 1);\n    const conLai = moc.filter(m => !daDung.has(m));\n    if (conLai.length) { i = conLai.reduce((b, m) => Math.abs(m - i) < Math.abs(b - i) ? m : b, conLai[0]); daDung.add(i); }\n    (raiDeu[i] = raiDeu[i] || []).push(a); gan[a] = -2;\n  });\n}\nconst pa1 = gan.some(k => k >= 0);\nconst body = [];\nconst coMK1 = Object.values(truoc).some(v => v.includes(1));\n// đã đánh dấu [ảnh N] thì luôn chèn, kể cả ảnh bìa / ảnh #fb (yêu cầu 16/11: ảnh bìa dùng lại trong bài được)\nconst anhSo = (k) => k === 1 ? anhChinh : (KR[k - 2] ? sach(KR[k - 2]) : '');\nconst daChen = new Set();\nconst chenMK = (i) => (truoc[i] || []).forEach(k => { const u = anhSo(k); if (u && !daChen.has(u)) { daChen.add(u); body.push({ type: 'image', url: u }); } });\nif (anhChinh && !coMK1) body.push({ type: 'image', url: anhChinh });\nlet dangY = -1, dauKhoiEmoji = false;\nrest.forEach((l, i) => {\n  chenMK(i);\n  body.push({ type: 'text', content: '<p>' + esc(l) + '</p>' });\n  if (raiDeu && raiDeu[i]) raiDeu[i].forEach(a => body.push({ type: 'image', url: anhThem[a] }));\n  if (!pa1) return;\n  const k = yIdx.indexOf(i);\n  if (k >= 0) dangY = k;\n  const sau = rest[i + 1];\n  if (k >= 0) { dauKhoiEmoji = sau ? !/^[\\p{L}\\p{N}\"“'(]/u.test(sau) : false; return; }\n  // hết khối của ý: dòng sau là ý mới / hết bài; với ý cuối: dòng sau là tiêu đề viết hoa, hoặc (khi gạch đầu dòng là chữ) dòng sau bắt đầu bằng emoji\n  const hoa = (s) => { const c = s.replace(/[^\\p{L}]/gu, ''); return c.length >= 8 && c === c.toUpperCase(); };\n  const hetKhoi = dangY >= 0 && (!sau || laY(sau) || hoa(sau) || (!dauKhoiEmoji && !/^[\\p{L}\\p{N}\"“'(]/u.test(sau)));\n  if (hetKhoi) { gan.forEach((k, a) => { if (k === dangY) body.push({ type: 'image', url: anhThem[a] }); }); dangY = -1; }\n});\nchenMK(rest.length);\ngan.forEach((k, a) => { if (k === -1) body.push({ type: 'image', url: anhThem[a] }); });\nif (footer.trim()) for (const l of lines('---***---\\n' + footer)) body.push({ type: 'text', content: '<p>' + esc(l) + '</p>' });\nconst article = { type: 'normal', title, author: 'GOS Academy', description: desc || title, body, status: 'show', comment: 'show',\n  ...(anhChinh ? { cover: { cover_type: 'photo', photo_url: anhChinh, status: 'show' } } : {}) };\nconst note = String(p.note || '');\nconst daOA = /\\[OA✓\\]|Zalo OA OK/.test(note);\nconst daGMF = /\\[GMF✓\\]|nhóm GMF OK/.test(note);\nif (daOA && daGMF) return []; // đã đăng đủ mọi kênh -> không làm gì\nreturn [{ json: { ...p, noiDung: boMK(full), linkAnh: anhChinh, anhThem: anhThem.join('\\n'), title, article, daOA, daGMF, cachDatAnh: (daChen.size ? `${daChen.size} ảnh theo đánh dấu [ảnh N]` + (anhThem.length ? ', ' : '') : '') + (anhThem.length ? (raiDeu ? `${anhThem.length} ảnh rải đều giữa bài` : `${gan.filter(k => k >= 0).length} ảnh dưới ý, ${gan.filter(k => k < 0).length} ảnh cuối bài`) : '') } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        -400
+      ],
+      "id": "f3b1d825-63a7-49ac-993e-53bcfa71158a",
+      "name": "Chuẩn bị bài"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gắn ảnh bìa 16:9 vào bài OA: ưu tiên ảnh ngang đã tạo, không có thì ảnh vuông + nền mờ, lỗi nữa thì ảnh gốc\nconst p = $('Chuẩn bị bài').first().json;\nlet url = String(p.anhBia || '').trim().replace(/#(src=[a-z0-9]+|tay|fb|zalo)$/i, '');   // bỏ nhãn #tay/#src= (Zalo không tải được link có nhãn)   // ảnh ngang 16:9 AI đã tạo lúc duyệt / lệnh /anhbia\nif (!url) try { const imgs = $('Lấy link ảnh bìa').first().json.images || []; url = (imgs.sort((a, b) => b.width - a.width)[0] || {}).source || ''; } catch (e) {}\nconst article = { ...p.article };\nif (url) article.cover = { cover_type: 'photo', photo_url: url, status: 'show' };\nreturn [{ json: { ...p, article, anhBiaNguon: p.anhBia ? 'ảnh ngang AI' : url ? 'nền mờ' : 'ảnh gốc' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        -400
+      ],
+      "id": "88520ca1-037d-49b1-b419-fae30e535250",
+      "name": "Gắn ảnh bìa"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Zalo OA: tạo bài ẨN (thử lại tối đa 3 lần, Zalo hay lỗi lần đầu khi tải ảnh Fanpage), lấy id; xóa bài ẩn cũ nếu có\nconst at = $('Lấy token Zalo').first().json.access_token;\nconst x = $('Xử lý lệnh').first().json;\nconst art = { ...$input.first().json.article, status: 'hide', comment: 'show' };\nconst H = { access_token: at };\nlet res = null, id = '', loi = '';\nfor (let lan = 0; lan < 3 && !id; lan++) {\n  if (lan) await new Promise(r => setTimeout(r, 45000));\n  try { res = await this.helpers.httpRequest({ method: 'POST', url: 'https://openapi.zalo.me/v2.0/article/create', headers: H, body: art, json: true }); } catch (e) { res = { error: -1, message: String(e.message || e) }; }\n  if (res && res.error === 0 && res.data?.token) {\n    for (let i = 0; i < 6 && !id; i++) {\n      try { const v = await this.helpers.httpRequest({ method: 'POST', url: 'https://openapi.zalo.me/v2.0/article/verify', headers: H, body: { token: res.data.token }, json: true }); id = v?.data?.id || ''; } catch (e) {}\n      if (!id) await new Promise(r => setTimeout(r, 3000));\n    }\n    if (!id) loi = 'đã tạo nhưng chưa lấy được id';\n  } else loi = (res && res.message) || 'lỗi không rõ';\n}\nlet xoaCu = '';\nif (id && x.oaCu && x.oaCu !== id) {\n  try { const r = await this.helpers.httpRequest({ method: 'POST', url: 'https://openapi.zalo.me/v2.0/article/remove', headers: H, body: { id: x.oaCu }, json: true }); xoaCu = r?.error === 0 ? 'ok' : (r?.message || 'lỗi'); } catch (e) { xoaCu = 'lỗi'; }\n}\nreturn [{ json: { oaId: id, oaLoi: id ? '' : loi, xoaCu } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "name": "Zalo OA: đăng ẩn",
+      "position": [
+        3520,
+        -400
+      ],
+      "id": "8ed49233-912d-430e-b3cc-df1abcd0abe5"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cbf9d52e",
+              "leftValue": "={{ !!$('Xử lý lệnh').first().json.fbCu && $('Xử lý lệnh').first().json.fbCu !== ($('Fanpage: đăng ẩn').first().json.id || '') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "name": "Có bài Fanpage ẩn cũ?",
+      "position": [
+        3740,
+        -400
+      ],
+      "id": "1a744a84-384d-4d69-96a9-cc914a2c6cf7"
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "DELETE",
+        "graphApiVersion": "v23.0",
+        "node": "={{ $('Xử lý lệnh').first().json.fbCu }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Graph API"
+        }
+      },
+      "name": "Xóa bài Fanpage ẩn cũ",
+      "position": [
+        3960,
+        -560
+      ],
+      "id": "52d2d9f7-c604-449c-aac8-6367ff5fbe04",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ghi bản ẩn vào Ghi chú + soạn tin\nconst x = $('Xử lý lệnh').first().json; const r = x.row;\nconst fb = $('Fanpage: đăng ẩn').first().json.id || '';\nconst oa = $('Zalo OA: đăng ẩn').first().json;\nconst TAG = /\\s*\\|?\\s*\\[ẨN fb=(\\S*) oa=(\\S*) h=([a-z0-9]*)\\]/;\nconst nowS = DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm');\nconst ghi = String(r['Ghi chú'] || '').replace(TAG, '').trim();\nconst okHet = !!fb && !!oa.oaId;\nconst tag = `[ẨN fb=${fb} oa=${oa.oaId || ''} h=${okHet ? x.ma : ''}]`;\nconst update = { 'ID': x.id, 'Ghi chú': [ghi, `Đăng ẩn xem trước qua Zalo ${nowS}`, tag].filter(Boolean).join(' | ') };\nif (okHet && x.gio) { update['Trạng thái'] = 'Chờ công khai'; update['Thời gian đăng'] = x.gio; }\nconst L = [];\nif (okHet) {\n  L.push(`👀 BÀI #${x.id} ĐÃ ĐĂNG ẨN ĐỂ XEM TRƯỚC (chưa ai thấy)`);\n  L.push(`🔗 Fanpage (quản trị viên Trang đăng nhập mới mở được): https://www.facebook.com/${fb}`);\n  L.push('📱 Zalo OA: bài ẨN, xem ở oa.zalo.me → Quản lý bài viết (bài trạng thái Ẩn)');\n  L.push(x.gio ? `⏰ Sẽ tự CÔNG KHAI lúc ${x.gio}. Đổi giờ: /congkhai ${x.id} <giờ> · ngay: /congkhai ${x.id} · bỏ hẹn: /congkhai ${x.id} huy`\n               : `✅ Ưng: /congkhai ${x.id} (ngay) hoặc /congkhai ${x.id} 20:00 (hẹn giờ)`);\n  L.push(`✏️ Chưa ưng: sửa bằng /sua, /dungbai, /datanh, /xepanh… ${x.id} rồi /xemtruoc ${x.id} lại (bản ẩn cũ tự xóa)`);\n} else {\n  L.push(`⚠️ BÀI #${x.id}: đăng ẩn chưa xong`);\n  L.push(`Fanpage: ${fb ? 'OK (ẩn) https://www.facebook.com/' + fb : '❌ lỗi'}`);\n  L.push(`Zalo OA: ${oa.oaId ? 'OK (ẩn)' : '❌ ' + (oa.oaLoi || 'lỗi')}`);\n  L.push(`👉 Gõ lại /xemtruoc ${x.id} sau ít phút.`);\n}\nreturn [{ json: { update, text: L.join('\\n'), urls: [r['Link ảnh'], ...String(r['Ảnh thêm'] || '').split('\\n')].map(s => String(s || '').trim()).filter(Boolean), oa_id: x.oa_id } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "name": "Kết quả xem trước",
+      "position": [
+        4180,
+        -400
+      ],
+      "id": "9a6119cf-b7d1-4ed7-a97d-2642eda486ed"
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "POST",
+        "graphApiVersion": "v23.0",
+        "node": "={{ $('Xử lý lệnh').first().json.fb }}",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "is_published",
+                "value": "true"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Graph API"
+        }
+      },
+      "name": "Fanpage: công khai",
+      "position": [
+        1320,
+        300
+      ],
+      "id": "07674a87-63a4-4b24-8cae-5c529c9db8c0",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Zalo OA: đọc bài ẩn rồi cập nhật status = show (giữ nguyên ảnh Zalo đã lưu)\nconst at = $('Lấy token Zalo').first().json.access_token; const H = { access_token: at };\nconst x = $('Xử lý lệnh').first().json;\nif (!x.oa) return [{ json: { ok: false, loi: 'không có bài Zalo OA ẩn' } }];\nlet d = null, r = null;\ntry { d = (await this.helpers.httpRequest({ method: 'GET', url: 'https://openapi.zalo.me/v2.0/article/getdetail?id=' + x.oa, headers: H, json: true }))?.data; } catch (e) {}\nif (!d) return [{ json: { ok: false, loi: 'không đọc được bài Zalo OA ẩn' } }];\nconst art = { id: x.oa, type: d.type || 'normal', title: d.title, author: d.author, description: d.description, cover: d.cover, body: d.body, status: 'show', comment: 'show' };\nfor (let lan = 0; lan < 3; lan++) {\n  if (lan) await new Promise(res => setTimeout(res, 30000));\n  try { r = await this.helpers.httpRequest({ method: 'POST', url: 'https://openapi.zalo.me/v2.0/article/update', headers: H, body: art, json: true }); } catch (e) { r = { error: -1, message: String(e.message || e) }; }\n  if (r?.error === 0) break;\n}\nconst OA = x.oa_id || '<ZALO_OA_ID>';\nreturn [{ json: { ok: r?.error === 0, loi: r?.error === 0 ? '' : (r?.message || 'lỗi'), link: `https://post.oa.zalo.me/d/${OA}?id=${x.oa}&pageId=${OA}` } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "name": "Zalo OA: công khai",
+      "position": [
+        1540,
+        300
+      ],
+      "id": "1c356e1c-8905-44d9-8e57-c8751bb6b135"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Kết quả công khai -> Sheet (Đã đăng) + tin ĐÃ ĐĂNG\nconst x = $('Xử lý lệnh').first().json; const r = x.row;\nconst fbR = $('Fanpage: công khai').first().json;\nconst fbOk = !!fbR && !fbR.error && (fbR.success === true || fbR.success === 'true' || !!fbR.id);\nlet oa = { ok: false, loi: 'chưa chạy' }; try { if ($('Zalo OA: công khai').isExecuted) oa = $('Zalo OA: công khai').first().json; } catch (e) {}\nconst nowS = DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm');\nconst linkFb = `https://www.facebook.com/${x.fb}`;\nconst ghi = String(r['Ghi chú'] || '').trim();\nconst update = { 'ID': x.id };\nconst L = [];\nif (fbOk) {\n  Object.assign(update, { 'Trạng thái': 'Đã đăng', 'Post ID': x.fb, 'Link bài': linkFb, 'Thời gian đăng': nowS,\n    'Ghi chú': [ghi, `Công khai${x.hen ? ' theo hẹn giờ' : ' qua Zalo'} ${nowS}`, oa.ok ? `Zalo OA OK [OA✓] ${oa.link}` : `Zalo OA lỗi: ${oa.loi}`, '[GMF✓]'].join(' | ') });\n  L.push(`✅ ĐÃ CÔNG KHAI BÀI #${x.id} lúc ${nowS}`);\n  L.push(`📝 ${String(r['Tiêu đề'] || String(r['Nội dung'] || '').split('\\n')[0]).slice(0, 150)}`);\n  L.push(`🔗 Fanpage: ${linkFb}`);\n  L.push(`🔗 Zalo OA: ${oa.ok ? oa.link : '❌ chưa công khai được (' + oa.loi + '), bài vẫn ẩn trên OA – báo người phụ trách'}`);\n} else {\n  update['Ghi chú'] = [ghi, `Công khai lỗi ${nowS}: ${JSON.stringify(fbR?.error || fbR).slice(0, 150)}`].join(' | ');\n  L.push(`⚠️ BÀI #${x.id}: Fanpage chưa công khai được nên CHƯA công khai gì (bài vẫn ẩn).`);\n  L.push(`Lỗi: ${String(fbR?.error?.message || JSON.stringify(fbR?.error || fbR)).slice(0, 200)}`);\n  L.push(`👉 Thử lại: /congkhai ${x.id}`);\n}\nreturn [{ json: { update, text: L.join('\\n'), fbOk, urls: [r['Link ảnh'], ...String(r['Ảnh thêm'] || '').split('\\n')].map(s => String(s || '').trim()).filter(Boolean), oa_id: x.oa_id } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "name": "Kết quả công khai",
+      "position": [
+        1760,
+        300
+      ],
+      "id": "25df75d0-11e8-4a42-b769-a184bdd6f1e6"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6ecea89f",
+              "leftValue": "={{ !$json.error && ($json.success === true || $json.success === 'true' || !!$json.id) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "name": "Fanpage OK? (trước Zalo)",
+      "position": [
+        1430,
+        460
+      ],
+      "id": "945ed9b1-ec87-472c-a324-fd2d905e05fd"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Trạng thái",
+              "displayName": "Trạng thái",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Thời gian đăng",
+              "displayName": "Thời gian đăng",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ghi chú",
+              "displayName": "Ghi chú",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Post ID",
+              "displayName": "Post ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Link bài",
+              "displayName": "Link bài",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "value": {
+            "ID": "={{ $json.update['ID'] }}",
+            "Trạng thái": "={{ (() => { const u = $json.update || {}; const r = $('Xử lý lệnh').first().json.row || {}; const k = \"Trạng thái\"; return u[k] !== undefined ? u[k] : (r[k] !== undefined ? r[k] : ''); })() }}",
+            "Thời gian đăng": "={{ (() => { const u = $json.update || {}; const r = $('Xử lý lệnh').first().json.row || {}; const k = \"Thời gian đăng\"; return u[k] !== undefined ? u[k] : (r[k] !== undefined ? r[k] : ''); })() }}",
+            "Ghi chú": "={{ (() => { const u = $json.update || {}; const r = $('Xử lý lệnh').first().json.row || {}; const k = \"Ghi chú\"; return u[k] !== undefined ? u[k] : (r[k] !== undefined ? r[k] : ''); })() }}",
+            "Post ID": "={{ (() => { const u = $json.update || {}; const r = $('Xử lý lệnh').first().json.row || {}; const k = \"Post ID\"; return u[k] !== undefined ? u[k] : (r[k] !== undefined ? r[k] : ''); })() }}",
+            "Link bài": "={{ (() => { const u = $json.update || {}; const r = $('Xử lý lệnh').first().json.row || {}; const k = \"Link bài\"; return u[k] !== undefined ? u[k] : (r[k] !== undefined ? r[k] : ''); })() }}"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        4400,
+        0
+      ],
+      "id": "a3aeef5a-41d8-45ac-9dcc-606864d3b7f9",
+      "name": "Ghi vào Sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "let k = null; for (const n of ['Kết quả xem trước', 'Kết quả công khai']) { try { if (!k && $(n).isExecuted) k = $(n).first().json; } catch (e) {} }\nreturn [{ json: { urls: k.urls, oa_id: k.oa_id } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "name": "DS ảnh để xem",
+      "position": [
+        4620,
+        0
+      ],
+      "id": "9b2932b5-6ca8-4a56-a42b-7dfad5dc22d8"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "87eNCWaItJH4dBgB"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        4840,
+        0
+      ],
+      "id": "dc7195b9-bb2b-4da7-8fce-14345e19d34d",
+      "name": "Ghép ảnh xem",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "let k = null; for (const n of ['Kết quả xem trước', 'Kết quả công khai']) { try { if (!k && $(n).isExecuted) k = $(n).first().json; } catch (e) {} }\nlet att = null; try { att = $input.first().json.attachment_id || null; } catch (e) {}\nreturn [{ json: { message: att ? { text: k.text, attachment: { type: 'template', payload: { template_type: 'media', elements: [{ media_type: 'image', attachment_id: att }] } } } : { text: k.text } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "name": "Soạn tin",
+      "position": [
+        5060,
+        0
+      ],
+      "id": "be8a4c81-2b96-4133-ba4d-b5ea4590ac45"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Xử lý lệnh').first().json.group_id }, message: $json.message }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "name": "Gửi vào nhóm",
+      "position": [
+        5280,
+        0
+      ],
+      "id": "7f9efde5-b1c1-427d-a5bf-1e06196bb6e3"
+    },
+    {
+      "parameters": {
+        "content": "## Xem trước & công khai\n**/xemtruoc <số> [giờ]**: kiểm tra như /duyet → đăng ẨN Fanpage (album, published=false) + Zalo OA (status hide) → ghi `[ẨN fb= oa= h=]` vào Ghi chú (h = mã nội dung + ảnh) → xóa bản ẩn cũ → ảnh lưới + link. Có giờ: Trạng thái **Chờ công khai**.\n**/congkhai <số> [giờ|huy]**: bản ẩn phải khớp bài hiện tại (h). Không giờ: Fanpage is_published=true → (OK) Zalo OA article/update status show → Sheet **Đã đăng** + tin ĐÃ CÔNG KHAI. Có giờ: **Chờ công khai**; lượt 5 phút tự công khai khi đến giờ.\nTrạng thái vẫn **Chờ duyệt** sau /xemtruoc nên vẫn sửa được; sửa xong phải /xemtruoc lại.",
+        "height": 260,
+        "width": 900,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "name": "Ghi chú",
+      "position": [
+        0,
+        -700
+      ],
+      "id": "3777492c-841d-46e3-ac8b-c7d77cc661a9"
+    }
+  ],
+  "connections": {
+    "Khi được gọi": {
+      "main": [
+        [
+          {
+            "node": "Lấy token Zalo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mỗi 5 phút (công khai hẹn giờ)": {
+      "main": [
+        [
+          {
+            "node": "Lấy token Zalo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy token Zalo": {
+      "main": [
+        [
+          {
+            "node": "Đọc lịch đăng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc lịch đăng": {
+      "main": [
+        [
+          {
+            "node": "Xử lý lệnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Xử lý lệnh": {
+      "main": [
+        [
+          {
+            "node": "Xem trước?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Xem trước?": {
+      "main": [
+        [
+          {
+            "node": "Báo đang đăng ẩn",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Công khai?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Công khai?": {
+      "main": [
+        [
+          {
+            "node": "Fanpage: công khai",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cập nhật hẹn giờ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cập nhật hẹn giờ?": {
+      "main": [
+        [
+          {
+            "node": "Ghi hẹn giờ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trả lời",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghi hẹn giờ": {
+      "main": [
+        [
+          {
+            "node": "Trả lời",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Báo đang đăng ẩn": {
+      "main": [
+        [
+          {
+            "node": "Dữ liệu bài",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dữ liệu bài": {
+      "main": [
+        [
+          {
+            "node": "DS ảnh album",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DS ảnh album": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh album (ẩn)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh album (ẩn)": {
+      "main": [
+        [
+          {
+            "node": "Gộp album (ẩn)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gộp album (ẩn)": {
+      "main": [
+        [
+          {
+            "node": "Fanpage: đăng ẩn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fanpage: đăng ẩn": {
+      "main": [
+        [
+          {
+            "node": "Chuẩn bị xếp ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chuẩn bị xếp ảnh": {
+      "main": [
+        [
+          {
+            "node": "Cần xếp ảnh?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cần xếp ảnh?": {
+      "main": [
+        [
+          {
+            "node": "AI xếp ảnh theo ý",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chuẩn bị bài",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI xếp ảnh theo ý": {
+      "main": [
+        [
+          {
+            "node": "Chuẩn bị bài",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chuẩn bị bài": {
+      "main": [
+        [
+          {
+            "node": "Gắn ảnh bìa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gắn ảnh bìa": {
+      "main": [
+        [
+          {
+            "node": "Zalo OA: đăng ẩn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zalo OA: đăng ẩn": {
+      "main": [
+        [
+          {
+            "node": "Có bài Fanpage ẩn cũ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có bài Fanpage ẩn cũ?": {
+      "main": [
+        [
+          {
+            "node": "Xóa bài Fanpage ẩn cũ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Kết quả xem trước",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Xóa bài Fanpage ẩn cũ": {
+      "main": [
+        [
+          {
+            "node": "Kết quả xem trước",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fanpage: công khai": {
+      "main": [
+        [
+          {
+            "node": "Fanpage OK? (trước Zalo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zalo OA: công khai": {
+      "main": [
+        [
+          {
+            "node": "Kết quả công khai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kết quả công khai": {
+      "main": [
+        [
+          {
+            "node": "Ghi vào Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fanpage OK? (trước Zalo)": {
+      "main": [
+        [
+          {
+            "node": "Zalo OA: công khai",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Kết quả công khai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kết quả xem trước": {
+      "main": [
+        [
+          {
+            "node": "Ghi vào Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghi vào Sheet": {
+      "main": [
+        [
+          {
+            "node": "DS ảnh để xem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DS ảnh để xem": {
+      "main": [
+        [
+          {
+            "node": "Ghép ảnh xem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghép ảnh xem": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin": {
+      "main": [
+        [
+          {
+            "node": "Gửi vào nhóm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "tags": []
+}

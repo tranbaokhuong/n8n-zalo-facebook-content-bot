@@ -1,0 +1,1000 @@
+{
+  "name": "Zalo OA - Ads Image",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "a0000000-0000-4000-8000-000000000001",
+      "name": "When Called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "oa_id",
+              "keyValue": "={{ $('When Called').first().json.oa_id }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "a0000000-0000-4000-8000-000000000002",
+      "name": "Get Zalo Token",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b1",
+              "leftValue": "={{ ($('When Called').first().json.brief || '').replace(/#quanly/gi, '').trim().length }}",
+              "rightValue": 5,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a0000000-0000-4000-8000-000000000003",
+      "name": "Has Brief?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Get Zalo Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('When Called').first().json.group_id }, message: { text: 'ℹ️ Cách dùng: /ads <mô tả sản phẩm, ưu đãi, khách hàng mục tiêu>\\nVí dụ: /ads Khóa học Facebook Ads cho chủ shop online, giảm 30% đến hết tháng 11\\nThêm #quanly để đưa quản lý vào ảnh, có thể tả cảnh: /ads #quanly Khóa học Facebook Ads... Cảnh: quản lý đang hướng dẫn học viên' } }) }}",
+        "options": {}
+      },
+      "id": "a0000000-0000-4000-8000-000000000004",
+      "name": "Send Usage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        528
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Get Zalo Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('When Called').first().json.group_id }, message: { text: '⏳ Đã nhận yêu cầu, đang viết content và tạo ảnh quảng cáo. Vui lòng chờ khoảng 1-2 phút...' } }) }}",
+        "options": {}
+      },
+      "id": "a0000000-0000-4000-8000-000000000005",
+      "name": "Send Ack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        304
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ systemInstruction: { parts: [{ text: \"Bạn là một chuyên gia viết content quảng cáo Facebook có hơn 10 năm kinh nghiệm, từng chạy hàng ngàn chiến dịch cho nhiều ngành khác nhau như mỹ phẩm, giáo dục, bất động sản, thời trang, dịch vụ cao cấp.  Nhiệm vụ của bạn là viết các mẫu content quảng cáo hiệu quả cao, đảm bảo đúng quy định của Facebook, có khả năng thu hút và chuyển đổi người đọc thành khách hàng.  Mỗi mẫu content phải: \\n- Có tiêu đề nổi bật (hook). \\n- Có phần mô tả sản phẩm/ngành hàng rõ ràng. \\n- Có lời kêu gọi hành động (CTA) mạnh mẽ. \\n- Có cảm xúc, nhấn vào nỗi đau hoặc mong muốn của khách hàng. \\n- Không được dùng từ ngữ gây cấm hoặc spam (như: điều trị, cam kết, bảo đảm 100%,…). \\n- Phong cách viết: thuyết phục, ngắn gọn, súc tích, dễ đọc trên di động. \\n- Nếu khách hàng yêu cầu viết theo kiểu kể chuyện, hài hước hoặc giật tít thì linh hoạt điều chỉnh theo.\\n- Cho icon phù hợp vào đầu các dòng để nổi bật nội dung quảng cáo\\n- Không được cho bất kỳ biểu tượng dấu sao (*) nào vào trong content. Loại bỏ hết ký tự dấu (*) đi\\n- Chỉ trả kết quả là content quảng cáo. Không cần trả lời rườm rà hay giao tiếp gì với người hỏi. Content tạo ra cần phải copy paste dùng được luôn chứ không cần phải giải thích cấu trúc gì cả\\n\\nBạn có thể linh hoạt sử dụng 1 trong các công thức sau khi viết:\\n\\n1. PAS (Problem – Agitate – Solution)\\n   - Gợi ra vấn đề → Làm rõ hậu quả → Đưa ra giải pháp.\\n\\n2. AIDA (Attention – Interest – Desire – Action) \\n   - Gây chú ý → Kích thích sự quan tâm → Tạo mong muốn → Kêu gọi hành động.\\n\\n3. 4P (Picture – Promise – Proof – Push)  \\n   - Vẽ ra viễn cảnh → Hứa hẹn → Chứng minh → Thúc đẩy hành động.\\n\\n4. FAB (Features – Advantages – Benefits) \\n   - Nêu tính năng → Ưu điểm → Lợi ích người dùng nhận được.\\n\\n# Quan trọng: Viết theo cấu trúc bài của các mẫu content ví dụ dưới đây:\\n\\n* Ví dụ 1:\\n\\\"💃 PHỤ NỮ CÓ 3 VIỆC KHÔNG THỂ NGỪNG ĐƯỢC\\n👑 Đó là Mua Sắm, Xinh Đẹp và Thành Công\\n👑 Sinh ra không có mệnh công chúa, phải sống cuộc đời như nữ hoàng. Là phụ nữ nhất định phải được tôn vinh\\n🎁 Đặc biệt Sale 50% cho các khách hàng mua lần thứ 2 trở lên ngay hôm nay\\n💝 Chỉ dành riêng cho chị em phụ nữ chúng mình\\n💝 Đàn ông muốn nhận ưu đãi phải mua quà tặng vợ hoặc người yêu.\\n👇 Chấm (.) để được Misbag tư vấn chi tiết \\n➖ CAM KẾT ➖ \\n- Ảnh như thế nào hàng như thế ấy\\n- Bảo hành 6 tháng \\n- Kiểm tra hàng trước khi thanh toán\\n- Đổi trả không mất phí nếu sản phẩm không đúng mẫu, đúng hình\\n---------------------\\n🔰 The Misbag: Bán phong cách, chất lượng - Mua sự hài lòng. \\n🏠 Add: 165F Xuân Thuỷ, Hà Nội\\n☎ Hotline: 039.8023.191\\n🚚 Ship hàng toàn quốc\\\"\\n\\n* Ví dụ 2: \\n\\\"💝 Hãy để tình yêu chân muối kết tinh vào từng sản phẩm của Myan Jewelry  \\n💍 Từ ngón tay đến trái tim – Từ tình yêu đến món nhân viên mãn  \\n\\n“Con người nên tin vào hôn nhân như tin vào sự bất tử của linh hồn.” – Khuyết danh  \\n\\n🎯 Một cuộc sống gia đình hạnh phúc bắt đầu từ tình yêu sâu đậm thêm liêng và kết thúc trọn trịa bằng sự ràng buộc, cam kết  \\n💎 Và những cặp nhẫn cưới kim cương chính là biểu tượng bất diệt cho một hôn nhân bền chặt  \\n\\n❤️‍🔥 Năm cang đẹp càng già đi, nhân sinh càng hạnh phúc mãn nguyện về sau  \\n\\n💥 Cùng chiêm ngưỡng BST nhẫn cưới cao cấp và độc quyền của Myan Jewelry  \\n\\n✔️ Sản phẩm được làm nên bởi bàn tay chế tác thủ công hơn 60 kinh nghiệm nổi danh làm cho các hãng trang sức của Pháp, tượng đài về độ bền và sự tinh xảo những hãng trang sức tinh túy tại Việt Nam và thế giới  \\n✔️ Sản phẩm đạt tiêu chuẩn vàng 18K độ tinh khiết  \\n✔️ Sử dụng kim cương thiên nhiên và kim cương thiên nhiên Top Color (D,E)  \\n✔️ Bộ quay và kim cương được chọn lựa kỹ càng, tiêu chuẩn lập lánh dưới cả điều kiện ánh sáng yếu  \\n✔️ Hàng bespoke thiết kế thủ công và sang trọng  \\n\\n✨ Dịch vụ ✨  \\n- Thiết kế nhẫn cưới theo sở thích  \\n- Bảo hành làm sạch, làm mới trọn đời  \\n- Ship hàng toàn quốc  \\n\\nMyan Jewelry – Elegant, like you  \\n📍 27 Tràng Tiền, Hà Nội  \\n📞 090.626.6926\\\"\\n\\n* Ví dụ 3:\\n\\\"🍷 Phụ nữ xinh đẹp giống như rượu  \\n🍵 Đàn bà thông minh tựa tách trà  \\n\\n🍓 Trí tuệ sẽ giúp người phụ nữ trên con đường thành công, còn một chiếc váy lụa đẹp sẽ khiến cho nàng trở nên thật kiêu sa và lộng lẫy  \\n🕊️ Xinh đẹp như nàng tiên, là lướt như cánh bướm.  \\n💖 Vô cùng phóng khoáng mà lại gợi cảm và nữ tính một cách đằm đà  \\n\\n💋 Ấ xìn mang đến cho các nàng toàn bộ tâm huyết và đam mê của mình nhé:  \\n✔️ Sản phẩm lụa tằm cao cấp được làm nên bởi bàn tay của những người thợ giỏi và có kinh nghiệm nhất  \\n✔️ Không nhăn, không tạo nếp, không tốn thời gian chăm sóc giặt là  \\n✔️ Thoáng mát, không phai màu  \\n✔️ Độc đáo và sang trọng. Giúp nàng tự tin khoe cá tính và thể hiện sự khác biệt của mình  \\n\\n📍 Để lại chấm (.) để được Á tư vấn và báo giá chi tiết nhé  \\n\\n— Dịch vụ —  \\n- Bảo hành sản phẩm nếu bị xước tơ, xù tơ  \\n- Lên gấu và may đo theo số đo miễn phí  \\n- Đổi trả trong 24h nếu sản phẩm còn nguyên vẹn  \\n- Kiểm tra hàng trước khi thanh toán  \\n\\n-----------------------------  \\nlet’s fall in love…  \\n👗 Á Boutique | Pure natural silk  \\n📞 Hotline: 037 561 8220 (9am–10pm)  \\n🏠 6H Hang Chao Str., Dong Da Dist., Hanoi  \\n📷 Instagram: www.instagram.com/aboutique.vn\\\"\\n\\n# Luật bắt buộc thêm:\\n- Chỉ dùng thông tin có trong mô tả của người dùng. KHÔNG bịa tên thương hiệu, giá, địa chỉ, hotline, website, số liệu.\\n- KHÔNG viết phần thông tin liên hệ/chữ ký ở cuối bài, hệ thống sẽ tự thêm thông tin công ty.\\n- Nếu mô tả có phần \\\"Cảnh: ...\\\" thì đó là yêu cầu bối cảnh cho ảnh: image_prompt phải tả đúng cảnh đó; KHÔNG đưa phần cảnh vào content, tiêu đề hay lợi ích.\\n- Giữ nguyên số viết bằng chữ số như trong mô tả (30%, 1-1, 20 học viên...), KHÔNG viết số thành chữ (ba mươi phần trăm, một một).\\n- Trả về JSON gồm 6 trường:\\n  content: bài quảng cáo hoàn chỉnh (tiếng Việt, có icon đầu dòng, không có dấu *). BẮT BUỘC xuống dòng như các ví dụ mẫu: mỗi ý một dòng bắt đầu bằng icon (ký tự \\\\n), giữa các phần cách một dòng trống (\\\\n\\\\n). Không viết dồn thành một đoạn.\\n  image_prompt: mô tả bằng tiếng Anh phần HÌNH ẢNH minh họa sát với nội dung bài (chủ thể, bối cảnh, ánh sáng). Ảnh rõ, sáng, màu da tự nhiên, chân thực. KHÔNG mô tả màn hình, biểu đồ, dashboard hay giao diện phần mềm; nếu có laptop/điện thoại thì nhìn từ phía sau hoặc bên cạnh, không thấy nội dung màn hình. Nếu có người thì là người Việt Nam (da trắng sáng, tóc đen, mắt đen, nét mặt người Việt, trông như người bình thường ngoài đời), bối cảnh ở Việt Nam. Chỉ tả cảnh, KHÔNG tả bố cục, chữ, logo hay tên thương hiệu.\\n  image_text: tiêu đề chính in trên banner, tiếng Việt có dấu, IN HOA, tối đa 6 chữ, là ý mạnh nhất của bài. Mô tả có ưu đãi thì tiêu đề nêu ĐÚNG ưu đãi đó; không tự đặt ra con số hay lời hứa (tăng doanh thu X%...) không có trong mô tả.\\n  subheadline: tiêu đề phụ bổ trợ tiêu đề chính (không lặp lại chữ của tiêu đề), tiếng Việt có dấu, viết hoa chữ đầu câu và tên riêng (Facebook, TikTok...), tối đa 10 chữ.\\n  benefits: đúng 3 lợi ích ngắn lấy từ bài, mỗi ý tối đa 5 chữ, tiếng Việt có dấu, không có con số tự đặt ra.\\n  cta: chữ trên nút kêu gọi hành động, tiếng Việt có dấu, IN HOA, tối đa 4 chữ (ví dụ: ĐĂNG KÝ TƯ VẤN, NHẬN ƯU ĐÃI NGAY).\" }] }, contents: [{ role: 'user', parts: [{ text: 'Mô tả sản phẩm/dịch vụ cần quảng cáo: ' + ($('When Called').first().json.brief || '').replace(/#quanly/gi, '').trim() + (/#quanly/i.test($('When Called').first().json.brief || '') ? '\\n(Ảnh có quản lý công ty, là nam, làm nhân vật chính trong vai chuyên gia/giảng viên, mặc vest lịch sự; không tả khuôn mặt chi tiết. Nếu mô tả có yêu cầu cảnh (ví dụ \"Cảnh: quản lý đang chỉ cho học viên...\") thì image_prompt tả đúng cảnh đó, quản lý là người hướng dẫn, người còn lại là học viên Việt Nam trưởng thành khoảng 20-35 tuổi (trông như chủ shop/nhân viên văn phòng, không phải học sinh); phần cảnh chỉ dùng cho image_prompt, không đưa vào content. Không có yêu cầu cảnh thì quản lý đứng một mình, nhìn thẳng tự tin.)' : '') }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { content: { type: 'STRING' }, image_prompt: { type: 'STRING' }, image_text: { type: 'STRING' }, subheadline: { type: 'STRING' }, benefits: { type: 'ARRAY', items: { type: 'STRING' } }, cta: { type: 'STRING' } }, required: ['content', 'image_prompt', 'image_text', 'subheadline', 'benefits', 'cta'] } } }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000006",
+      "name": "Write Ads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        304
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = ($json.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');\nconst d = JSON.parse(raw);\nconst clean = (s) => String(s || '').replace(/\\*/g, '').trim();\nconst ads = { content: clean(d.content), image_prompt: clean(d.image_prompt), image_text: clean(d.image_text).toUpperCase(), subheadline: clean(d.subheadline), benefits: (d.benefits || []).map(clean).filter(Boolean).slice(0, 3), cta: clean(d.cta).toUpperCase() || 'ĐĂNG KÝ TƯ VẤN' };\nif (!ads.content || !ads.image_prompt) throw new Error('Gemini trả thiếu nội dung');\n// gemini-3.8-flash (key trả phí) hay trả content dồn một đoạn: tự xuống dòng trước mỗi icon đứng sau dấu câu\nif (!ads.content.includes('\\n')) ads.content = ads.content.replace(/([.!?:])\\s+(?=\\p{Extended_Pictographic})/gu, '$1\\n').replace(/\\s+(?=[✔✅☑]\\uFE0F?)/gu, '\\n');\nads.manager_photo = /#quanly/i.test($('When Called').first().json.brief || '') ? '<ANH_CA_NHAN_DA_LUOC_BO>' : null;\nads.manager_face = ads.manager_photo ? '<ANH_CA_NHAN_DA_LUOC_BO>' : null;\nreturn [{ json: ads }];"
+      },
+      "id": "a0000000-0000-4000-8000-000000000007",
+      "name": "Parse Ads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        304
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-image:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: ($json.manager_photo ? [{ inlineData: { mimeType: 'image/jpeg', data: $json.manager_photo } }, { inlineData: { mimeType: 'image/jpeg', data: $json.manager_face } }] : []).concat([{ inlineData: { mimeType: 'image/png', data: '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' } }, { text: [($json.manager_photo ? 'IDENTITY (top priority): the first two attached images (a full-body photo and a close-up of his face) show one specific real man. He must appear in the banner as the main person with exactly his face: same face shape, eyes, eyebrows, nose, mouth, glasses, hairstyle and skin tone, instantly recognizable as him; never replace him with a different-looking man. Only pose, clothing details, framing and lighting may change. Any other person in the scene must look clearly different from him: noticeably younger, no glasses, different hairstyle and face shape.' : ''),'LAYOUT REFERENCE: the attached image made of flat colored blocks is a layout wireframe. Place every element exactly where its block is: empty area at top-left above the headline = logo area, keep it plain light background with nothing in it (no placeholder text such as Logo, Your Logo or Future Logo; the real logo is added later); two dark red bars = headline; gray bars below = subheadline; orange dots with gray bars = the three benefit rows (each dot becomes a round orange badge with a small white line icon inside matching the benefit, never a plain dot); red pill = call-to-action button; big peach rounded area on the right = the photo; dark red strip at the bottom = footer area, keep it plain. Do not draw the wireframe blocks themselves; design the real banner on top of this layout.','The whole photo scene (people, laptop, desk, chair and every object) stays inside the photo area on the right; nothing from the photo extends into the text column on the left or sticks out of the photo frame.',($json.manager_photo ? 'MAIN PERSON: the man from the first two attached photos (not the wireframe). He is the expert/instructor, in a smart business suit, confident and friendly. Do not copy the wooden background of the photo. If the visual describes other people (for example students he is guiding), he is the one teaching or pointing things out to them, and every other person is a clearly different Vietnamese person with their own distinct face, never a copy of his face; otherwise he appears alone.' : ''),'Design a square Facebook ad banner for a Vietnamese digital-skills academy.','VISUAL: ' + $json.image_prompt + ' Clear, well-lit photo.','PEOPLE: every person is clearly Vietnamese with typical Vietnamese features: fair light skin, black hair, dark black-brown eyes, natural Vietnamese facial features, natural everyday look like a real Vietnamese office worker or shop owner (not a fashion model, light natural makeup). No Western, mixed, Korean or Japanese idol look. Students, learners and customers are adults about 20-35 years old who look like shop owners or office workers, never children or teenagers. The main person faces the viewer with the whole face and upper body clearly visible on the right side, never cropped by the frame or hidden behind shapes.','LAYOUT (strict): the design fills the entire canvas edge to edge, including the very top; no separate bands, strips, boxes or frames. The upper-left corner, about one third of the width and one sixth of the height, contains only soft plain light background with no boxes or shapes, because a logo will be placed there later; the headline starts just below that corner, about one fifth of the way down the canvas. The bottom tenth of the canvas will be covered by a footer bar later, so the whole text block including the button must end at about four fifths of the canvas height, leaving a generous empty gap between the button and that footer area (as large as the gap between the benefit rows and the button). Keep text inside safe margins on a clean grid; no face, product or text touches the edges.','STYLE: a rich, polished, professional Vietnamese social-media ad design, like a top creative agency would make: layered composition with depth, the person or product cut out and placed over dynamic brand-color shapes (diagonal gradient ribbons, curved swooshes and rounded blocks from #FF851B to #EF3522, a subtle dot pattern), soft drop shadows, clear visual hierarchy. Light and airy overall: about 70% white or cream #FFF5EE.','TEXT BLOCK, left-aligned below the top-left corner, all in one heavy geometric sans-serif typeface in the style of Be Vietnam Pro, with no numbering or bullet numbers.','The text block starts with a clear gap below the empty upper-left corner. At the top of the text block, the headline in ExtraBold, dark red #780D0D with the key offer words in orange-red #EF3522, at most 2-3 lines: \"' + $json.image_text + '\".','Under it, a smaller subheadline in SemiBold dark gray #262626: \"' + $json.subheadline + '\".','Then three benefit rows, each starting with a small round orange icon in one consistent flat line style, text in Medium dark gray #262626: ' + $json.benefits.map((b) => '\"' + b + '\"').join(', ') + '.','At the bottom of the text block, one rounded call-to-action button with a gradient from #FF851B to #EF3522 top to bottom and bold white text: \"' + $json.cta + '\".',($json.image_text.match(/\\d+\\s*%/) ? 'Add a round badge in orange-red #EF3522 near the person showing only \"' + (/GIẢM/.test($json.image_text) ? '-' : '') + $json.image_text.match(/\\d+\\s*%/)[0] + '\" in bold white.' : ''),'Colors: only orange #FF851B, orange-red #EF3522, dark red #780D0D, white, cream #FFF5EE and dark gray #262626. No neon, no metallic or glitter effects, no mixed icon styles.','Copy every text above exactly with correct Vietnamese diacritics. Do NOT add any other text, letters, numbers, logos, watermarks, brand names, phone numbers or websites anywhere. Packaging is plain with no labels.','Keep the photo physically realistic: absolutely no floating UI panels, windows, cards, holograms, charts, dashboards or graphs anywhere in the image. Any laptop is seen from behind: only its plain, sharp, in-focus aluminium lid faces the viewer, a generic unbranded laptop whose lid is completely blank: absolutely no Apple logo, no bitten-apple shape and no other brand mark and the screen is never visible; phones lie face down. Everything is sharp and in focus, no blur or glow. Graphic shapes stay in the background layer behind the person.'].join(' ') }]) }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: '1:1' } } }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000008",
+      "name": "Generate Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1488,
+        304
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api Gen Image"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ảnh AI + header/footer nhận diện để bước sau ghép lại\n// Có lần tạo lại thì dùng ảnh tạo lại (nếu tạo lại lỗi thì quay về ảnh đầu); check: ok | wrong | unchecked\nconst pick = (n) => { try { return ($(n).all(0)[0].json.candidates?.[0]?.content?.parts || []).find((p) => p.inlineData?.data) || null; } catch (e) { return null; } };\nconst verdict = (n) => { try { const j = $(n).all(0)[0].json; if (j.error) return null; return JSON.parse((j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('')); } catch (e) { return null; } };\nlet img = pick('Generate Retry'), v = verdict('Check Retry Paid') || verdict('Check Retry');\nif (!img) { img = pick('Generate Image'); v = verdict('Check Text Paid') || verdict('Check Text'); }\nif (!img) throw new Error('Gemini không trả ảnh');\nlet check = !v ? 'unchecked' : v.ok ? 'ok' : 'wrong';\nlet wrong = (v && v.wrong) || '';\nif (v && v.headline_top && v.headline_top < 164) { check = 'wrong'; wrong = [wrong, 'tiêu đề bị khung logo che'].filter(Boolean).join('; '); }\nif (v && v.same_person === false) { check = 'wrong'; wrong = [wrong, 'khuôn mặt quản lý chưa giống ảnh gốc'].filter(Boolean).join('; '); }\n// Đẩy ảnh lên vừa đủ để nút CTA cách footer, không đẩy tiêu đề vào vùng logo; không đo được thì đẩy nhẹ\nlet shift = 27;\nif (v && v.button_bottom) {\n  const need = v.button_bottom * 1.08 + 60 - 972;\n  const room = (v.headline_top || 1000) * 1.08 - 189;\n  shift = Math.round(Math.max(0, Math.min(need, room, 100)));\n}\nconst ext = img.inlineData.mimeType === 'image/png' ? 'png' : 'jpg';\nconst header = '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';\nconst footer = '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';\nreturn [{ json: { check, wrong, shift }, binary: {\n  file: { data: img.inlineData.data, mimeType: img.inlineData.mimeType, fileName: 'ai.' + ext, fileExtension: ext },\n  header: { data: header, mimeType: 'image/png', fileName: 'header.png', fileExtension: 'png' },\n  footer: { data: footer, mimeType: 'image/png', fileName: 'footer.png', fileExtension: 'png' },\n  canvas: { data: 'iVBORw0KGgoAAAANSUhEUgAABDgAAAQ4CAYAAADsEGyPAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAABsCSURBVHhe7dgxDQAwDMCw8Qfbb3eLI5IPk/DbPwsAAABQJjgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADyBAcAAACQJzgAAACAPMEBAAAA5AkOAAAAIE9wAAAAAHmCAwAAAMgTHAAAAECe4AAAAADiZg8MhFAELSY6+wAAAABJRU5ErkJggg==', mimeType: 'image/png', fileName: 'ads.png', fileExtension: 'png' },\n} }];"
+      },
+      "id": "a0000000-0000-4000-8000-000000000009",
+      "name": "To File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2672,
+        304
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "multiStep",
+        "dataPropertyName": "file",
+        "operations": {
+          "operations": [
+            {
+              "operation": "resize",
+              "width": 1080,
+              "height": 1080,
+              "resizeOption": "ignoreAspectRatio"
+            },
+            {
+              "operation": "crop",
+              "width": 1080,
+              "height": "={{ 1080 - $json.shift }}",
+              "positionY": "={{ $json.shift }}"
+            }
+          ]
+        },
+        "options": {
+          "format": "png"
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000022",
+      "name": "Fit Image",
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        2880,
+        304
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "multiStep",
+        "dataPropertyName": "canvas",
+        "operations": {
+          "operations": [
+            {
+              "operation": "composite",
+              "dataPropertyNameComposite": "file"
+            },
+            {
+              "operation": "composite",
+              "dataPropertyNameComposite": "header",
+              "positionX": 54,
+              "positionY": 54
+            },
+            {
+              "operation": "composite",
+              "dataPropertyNameComposite": "footer",
+              "positionY": 972
+            }
+          ]
+        },
+        "options": {
+          "fileName": "ads.jpg",
+          "format": "jpeg",
+          "quality": 88
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000014",
+      "name": "Brand Overlay",
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        3104,
+        304
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v2.0/oa/upload/image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Get Zalo Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "canvas"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a0000000-0000-4000-8000-000000000010",
+      "name": "Upload Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3328,
+        304
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tin 1: ảnh kèm chú thích ngắn; các tin sau: content + footer (Zalo giới hạn 2000 ký tự/tin)\n// Tạo/upload ảnh lỗi thì vẫn gửi content để người dùng không phải chờ lại từ đầu\nconst footer = \"---***---\\nCÔNG TY TNHH GOSTECH\\nGiải pháp phát triển doanh nghiệp\\n📍 Trụ sở chính: Số nhà 11, ngõ 245/116/27 Phố Định Công, Phường Định Công, Hà Nội\\n📍 Văn phòng: Tòa A3 Vinhomes Hàm Nghi, Phường Từ Liêm, Hà Nội\\n📞 Hotline: 0968 343 342\\n🌐 Website: gostech.vn | hocviendigital.vn\";\nconst ads = $('Parse Ads').all(0)[0].json;\nconst brief = ($('When Called').first().json.brief || '').replace(/#quanly/gi, '').trim().replace(/[\\s.]*Cảnh\\s*:[\\s\\S]*$/i, '').trim();\nlet att = null;\ntry { att = $('Upload Image').all(0)[0].json.data?.attachment_id || null; } catch (e) {}\nlet chk = {};\ntry { chk = $('To File').all(0)[0]?.json || {}; } catch (e) {}\nconst warn = chk.check === 'wrong' ? '\\n⚠️ AI kiểm tra thấy ảnh có thể có lỗi: ' + chk.wrong + '. Bạn xem kỹ trước khi dùng hoặc gõ lại /ads.'\n  : chk.check === 'unchecked' ? '\\nℹ️ Chưa kiểm tra được chính tả trên ảnh, bạn xem lại trước khi dùng.' : '';\nconst msgs = [];\nif (att) msgs.push({ text: '🖼️ Ảnh quảng cáo cho: ' + (brief.length > 150 ? brief.slice(0, 150) + '...' : brief) + warn, attachment: { type: 'template', payload: { template_type: 'media', elements: [{ media_type: 'image', attachment_id: att }] } } });\nconst note = att ? '' : '⚠️ Lần này chưa tạo được ảnh, gửi trước phần content. Bạn gõ lại lệnh /ads để thử tạo ảnh.\\n\\n';\nconst text = (note + ads.content + '\\n\\n' + footer).trim();\nconst max = 1900;\nlet cur = '';\nfor (const para of text.split(/\\n{2,}/)) {\n  const joined = cur ? cur + '\\n\\n' + para : para;\n  if (joined.length <= max) { cur = joined; continue; }\n  if (cur) msgs.push({ text: cur });\n  cur = '';\n  if (para.length <= max) { cur = para; continue; }\n  for (let i = 0; i < para.length; i += max) msgs.push({ text: para.slice(i, i + max) });\n}\nif (cur) msgs.push({ text: cur });\nreturn msgs.map((message) => ({ json: { message } }));"
+      },
+      "id": "a0000000-0000-4000-8000-000000000011",
+      "name": "Build Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3552,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Get Zalo Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('When Called').first().json.group_id }, message: $json.message }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000012",
+      "name": "Send Messages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3760,
+        304
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Get Zalo Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('When Called').first().json.group_id }, message: { text: '❌ Hệ thống AI đang quá tải, chưa viết được content. Bạn vui lòng gửi lại lệnh /ads sau ít phút nhé.' } }) }}",
+        "options": {}
+      },
+      "id": "a0000000-0000-4000-8000-000000000013",
+      "name": "Send AI Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1184,
+        528
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: ($('Parse Ads').first(0).json.manager_photo ? [{ inlineData: { mimeType: 'image/jpeg', data: $('Parse Ads').first(0).json.manager_photo } }, { inlineData: { mimeType: 'image/jpeg', data: $('Parse Ads').first(0).json.manager_face } }] : []).concat([{ inlineData: { mimeType: 'image/png', data: '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' } }, { text: [($('Parse Ads').first(0).json.manager_photo ? 'IDENTITY (top priority): the first two attached images (a full-body photo and a close-up of his face) show one specific real man. He must appear in the banner as the main person with exactly his face: same face shape, eyes, eyebrows, nose, mouth, glasses, hairstyle and skin tone, instantly recognizable as him; never replace him with a different-looking man. Only pose, clothing details, framing and lighting may change. Any other person in the scene must look clearly different from him: noticeably younger, no glasses, different hairstyle and face shape.' : ''),'LAYOUT REFERENCE: the attached image made of flat colored blocks is a layout wireframe. Place every element exactly where its block is: empty area at top-left above the headline = logo area, keep it plain light background with nothing in it (no placeholder text such as Logo, Your Logo or Future Logo; the real logo is added later); two dark red bars = headline; gray bars below = subheadline; orange dots with gray bars = the three benefit rows (each dot becomes a round orange badge with a small white line icon inside matching the benefit, never a plain dot); red pill = call-to-action button; big peach rounded area on the right = the photo; dark red strip at the bottom = footer area, keep it plain. Do not draw the wireframe blocks themselves; design the real banner on top of this layout.','The whole photo scene (people, laptop, desk, chair and every object) stays inside the photo area on the right; nothing from the photo extends into the text column on the left or sticks out of the photo frame.',($('Parse Ads').first(0).json.manager_photo ? 'MAIN PERSON: the man from the first two attached photos (not the wireframe). He is the expert/instructor, in a smart business suit, confident and friendly. Do not copy the wooden background of the photo. If the visual describes other people (for example students he is guiding), he is the one teaching or pointing things out to them, and every other person is a clearly different Vietnamese person with their own distinct face, never a copy of his face; otherwise he appears alone.' : ''),'Design a square Facebook ad banner for a Vietnamese digital-skills academy.','VISUAL: ' + $('Parse Ads').first(0).json.image_prompt + ' Clear, well-lit photo.','PEOPLE: every person is clearly Vietnamese with typical Vietnamese features: fair light skin, black hair, dark black-brown eyes, natural Vietnamese facial features, natural everyday look like a real Vietnamese office worker or shop owner (not a fashion model, light natural makeup). No Western, mixed, Korean or Japanese idol look. Students, learners and customers are adults about 20-35 years old who look like shop owners or office workers, never children or teenagers. The main person faces the viewer with the whole face and upper body clearly visible on the right side, never cropped by the frame or hidden behind shapes.','LAYOUT (strict): the design fills the entire canvas edge to edge, including the very top; no separate bands, strips, boxes or frames. The upper-left corner, about one third of the width and one sixth of the height, contains only soft plain light background with no boxes or shapes, because a logo will be placed there later; the headline starts just below that corner, about one fifth of the way down the canvas. The bottom tenth of the canvas will be covered by a footer bar later, so the whole text block including the button must end at about four fifths of the canvas height, leaving a generous empty gap between the button and that footer area (as large as the gap between the benefit rows and the button). Keep text inside safe margins on a clean grid; no face, product or text touches the edges.','STYLE: a rich, polished, professional Vietnamese social-media ad design, like a top creative agency would make: layered composition with depth, the person or product cut out and placed over dynamic brand-color shapes (diagonal gradient ribbons, curved swooshes and rounded blocks from #FF851B to #EF3522, a subtle dot pattern), soft drop shadows, clear visual hierarchy. Light and airy overall: about 70% white or cream #FFF5EE.','TEXT BLOCK, left-aligned below the top-left corner, all in one heavy geometric sans-serif typeface in the style of Be Vietnam Pro, with no numbering or bullet numbers.','The text block starts with a clear gap below the empty upper-left corner. At the top of the text block, the headline in ExtraBold, dark red #780D0D with the key offer words in orange-red #EF3522, at most 2-3 lines: \"' + $('Parse Ads').first(0).json.image_text + '\".','Under it, a smaller subheadline in SemiBold dark gray #262626: \"' + $('Parse Ads').first(0).json.subheadline + '\".','Then three benefit rows, each starting with a small round orange icon in one consistent flat line style, text in Medium dark gray #262626: ' + $('Parse Ads').first(0).json.benefits.map((b) => '\"' + b + '\"').join(', ') + '.','At the bottom of the text block, one rounded call-to-action button with a gradient from #FF851B to #EF3522 top to bottom and bold white text: \"' + $('Parse Ads').first(0).json.cta + '\".',($('Parse Ads').first(0).json.image_text.match(/\\d+\\s*%/) ? 'Add a round badge in orange-red #EF3522 near the person showing only \"' + (/GIẢM/.test($('Parse Ads').first(0).json.image_text) ? '-' : '') + $('Parse Ads').first(0).json.image_text.match(/\\d+\\s*%/)[0] + '\" in bold white.' : ''),'Colors: only orange #FF851B, orange-red #EF3522, dark red #780D0D, white, cream #FFF5EE and dark gray #262626. No neon, no metallic or glitter effects, no mixed icon styles.','Second attempt because the first one had mistakes: be extremely careful. Copy every text above exactly with correct Vietnamese diacritics. Do NOT add any other text, letters, numbers, logos, watermarks, brand names, phone numbers or websites anywhere. Packaging is plain with no labels.','Keep the photo physically realistic: absolutely no floating UI panels, windows, cards, holograms, charts, dashboards or graphs anywhere in the image. Any laptop is seen from behind: only its plain, sharp, in-focus aluminium lid faces the viewer, a generic unbranded laptop whose lid is completely blank: absolutely no Apple logo, no bitten-apple shape and no other brand mark and the screen is never visible; phones lie face down. Everything is sharp and in focus, no blur or glow. Graphic shapes stay in the background layer behind the person.'].join(' ') }]) }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: '1:1' } } }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000015",
+      "name": "Generate Retry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2144,
+        528
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api Gen Image"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ systemInstruction: { parts: [{ text: \"Bạn là một chuyên gia viết content quảng cáo Facebook có hơn 10 năm kinh nghiệm, từng chạy hàng ngàn chiến dịch cho nhiều ngành khác nhau như mỹ phẩm, giáo dục, bất động sản, thời trang, dịch vụ cao cấp.  Nhiệm vụ của bạn là viết các mẫu content quảng cáo hiệu quả cao, đảm bảo đúng quy định của Facebook, có khả năng thu hút và chuyển đổi người đọc thành khách hàng.  Mỗi mẫu content phải: \\n- Có tiêu đề nổi bật (hook). \\n- Có phần mô tả sản phẩm/ngành hàng rõ ràng. \\n- Có lời kêu gọi hành động (CTA) mạnh mẽ. \\n- Có cảm xúc, nhấn vào nỗi đau hoặc mong muốn của khách hàng. \\n- Không được dùng từ ngữ gây cấm hoặc spam (như: điều trị, cam kết, bảo đảm 100%,…). \\n- Phong cách viết: thuyết phục, ngắn gọn, súc tích, dễ đọc trên di động. \\n- Nếu khách hàng yêu cầu viết theo kiểu kể chuyện, hài hước hoặc giật tít thì linh hoạt điều chỉnh theo.\\n- Cho icon phù hợp vào đầu các dòng để nổi bật nội dung quảng cáo\\n- Không được cho bất kỳ biểu tượng dấu sao (*) nào vào trong content. Loại bỏ hết ký tự dấu (*) đi\\n- Chỉ trả kết quả là content quảng cáo. Không cần trả lời rườm rà hay giao tiếp gì với người hỏi. Content tạo ra cần phải copy paste dùng được luôn chứ không cần phải giải thích cấu trúc gì cả\\n\\nBạn có thể linh hoạt sử dụng 1 trong các công thức sau khi viết:\\n\\n1. PAS (Problem – Agitate – Solution)\\n   - Gợi ra vấn đề → Làm rõ hậu quả → Đưa ra giải pháp.\\n\\n2. AIDA (Attention – Interest – Desire – Action) \\n   - Gây chú ý → Kích thích sự quan tâm → Tạo mong muốn → Kêu gọi hành động.\\n\\n3. 4P (Picture – Promise – Proof – Push)  \\n   - Vẽ ra viễn cảnh → Hứa hẹn → Chứng minh → Thúc đẩy hành động.\\n\\n4. FAB (Features – Advantages – Benefits) \\n   - Nêu tính năng → Ưu điểm → Lợi ích người dùng nhận được.\\n\\n# Quan trọng: Viết theo cấu trúc bài của các mẫu content ví dụ dưới đây:\\n\\n* Ví dụ 1:\\n\\\"💃 PHỤ NỮ CÓ 3 VIỆC KHÔNG THỂ NGỪNG ĐƯỢC\\n👑 Đó là Mua Sắm, Xinh Đẹp và Thành Công\\n👑 Sinh ra không có mệnh công chúa, phải sống cuộc đời như nữ hoàng. Là phụ nữ nhất định phải được tôn vinh\\n🎁 Đặc biệt Sale 50% cho các khách hàng mua lần thứ 2 trở lên ngay hôm nay\\n💝 Chỉ dành riêng cho chị em phụ nữ chúng mình\\n💝 Đàn ông muốn nhận ưu đãi phải mua quà tặng vợ hoặc người yêu.\\n👇 Chấm (.) để được Misbag tư vấn chi tiết \\n➖ CAM KẾT ➖ \\n- Ảnh như thế nào hàng như thế ấy\\n- Bảo hành 6 tháng \\n- Kiểm tra hàng trước khi thanh toán\\n- Đổi trả không mất phí nếu sản phẩm không đúng mẫu, đúng hình\\n---------------------\\n🔰 The Misbag: Bán phong cách, chất lượng - Mua sự hài lòng. \\n🏠 Add: 165F Xuân Thuỷ, Hà Nội\\n☎ Hotline: 039.8023.191\\n🚚 Ship hàng toàn quốc\\\"\\n\\n* Ví dụ 2: \\n\\\"💝 Hãy để tình yêu chân muối kết tinh vào từng sản phẩm của Myan Jewelry  \\n💍 Từ ngón tay đến trái tim – Từ tình yêu đến món nhân viên mãn  \\n\\n“Con người nên tin vào hôn nhân như tin vào sự bất tử của linh hồn.” – Khuyết danh  \\n\\n🎯 Một cuộc sống gia đình hạnh phúc bắt đầu từ tình yêu sâu đậm thêm liêng và kết thúc trọn trịa bằng sự ràng buộc, cam kết  \\n💎 Và những cặp nhẫn cưới kim cương chính là biểu tượng bất diệt cho một hôn nhân bền chặt  \\n\\n❤️‍🔥 Năm cang đẹp càng già đi, nhân sinh càng hạnh phúc mãn nguyện về sau  \\n\\n💥 Cùng chiêm ngưỡng BST nhẫn cưới cao cấp và độc quyền của Myan Jewelry  \\n\\n✔️ Sản phẩm được làm nên bởi bàn tay chế tác thủ công hơn 60 kinh nghiệm nổi danh làm cho các hãng trang sức của Pháp, tượng đài về độ bền và sự tinh xảo những hãng trang sức tinh túy tại Việt Nam và thế giới  \\n✔️ Sản phẩm đạt tiêu chuẩn vàng 18K độ tinh khiết  \\n✔️ Sử dụng kim cương thiên nhiên và kim cương thiên nhiên Top Color (D,E)  \\n✔️ Bộ quay và kim cương được chọn lựa kỹ càng, tiêu chuẩn lập lánh dưới cả điều kiện ánh sáng yếu  \\n✔️ Hàng bespoke thiết kế thủ công và sang trọng  \\n\\n✨ Dịch vụ ✨  \\n- Thiết kế nhẫn cưới theo sở thích  \\n- Bảo hành làm sạch, làm mới trọn đời  \\n- Ship hàng toàn quốc  \\n\\nMyan Jewelry – Elegant, like you  \\n📍 27 Tràng Tiền, Hà Nội  \\n📞 090.626.6926\\\"\\n\\n* Ví dụ 3:\\n\\\"🍷 Phụ nữ xinh đẹp giống như rượu  \\n🍵 Đàn bà thông minh tựa tách trà  \\n\\n🍓 Trí tuệ sẽ giúp người phụ nữ trên con đường thành công, còn một chiếc váy lụa đẹp sẽ khiến cho nàng trở nên thật kiêu sa và lộng lẫy  \\n🕊️ Xinh đẹp như nàng tiên, là lướt như cánh bướm.  \\n💖 Vô cùng phóng khoáng mà lại gợi cảm và nữ tính một cách đằm đà  \\n\\n💋 Ấ xìn mang đến cho các nàng toàn bộ tâm huyết và đam mê của mình nhé:  \\n✔️ Sản phẩm lụa tằm cao cấp được làm nên bởi bàn tay của những người thợ giỏi và có kinh nghiệm nhất  \\n✔️ Không nhăn, không tạo nếp, không tốn thời gian chăm sóc giặt là  \\n✔️ Thoáng mát, không phai màu  \\n✔️ Độc đáo và sang trọng. Giúp nàng tự tin khoe cá tính và thể hiện sự khác biệt của mình  \\n\\n📍 Để lại chấm (.) để được Á tư vấn và báo giá chi tiết nhé  \\n\\n— Dịch vụ —  \\n- Bảo hành sản phẩm nếu bị xước tơ, xù tơ  \\n- Lên gấu và may đo theo số đo miễn phí  \\n- Đổi trả trong 24h nếu sản phẩm còn nguyên vẹn  \\n- Kiểm tra hàng trước khi thanh toán  \\n\\n-----------------------------  \\nlet’s fall in love…  \\n👗 Á Boutique | Pure natural silk  \\n📞 Hotline: 037 561 8220 (9am–10pm)  \\n🏠 6H Hang Chao Str., Dong Da Dist., Hanoi  \\n📷 Instagram: www.instagram.com/aboutique.vn\\\"\\n\\n# Luật bắt buộc thêm:\\n- Chỉ dùng thông tin có trong mô tả của người dùng. KHÔNG bịa tên thương hiệu, giá, địa chỉ, hotline, website, số liệu.\\n- KHÔNG viết phần thông tin liên hệ/chữ ký ở cuối bài, hệ thống sẽ tự thêm thông tin công ty.\\n- Nếu mô tả có phần \\\"Cảnh: ...\\\" thì đó là yêu cầu bối cảnh cho ảnh: image_prompt phải tả đúng cảnh đó; KHÔNG đưa phần cảnh vào content, tiêu đề hay lợi ích.\\n- Giữ nguyên số viết bằng chữ số như trong mô tả (30%, 1-1, 20 học viên...), KHÔNG viết số thành chữ (ba mươi phần trăm, một một).\\n- Trả về JSON gồm 6 trường:\\n  content: bài quảng cáo hoàn chỉnh (tiếng Việt, có icon đầu dòng, không có dấu *). BẮT BUỘC xuống dòng như các ví dụ mẫu: mỗi ý một dòng bắt đầu bằng icon (ký tự \\\\n), giữa các phần cách một dòng trống (\\\\n\\\\n). Không viết dồn thành một đoạn.\\n  image_prompt: mô tả bằng tiếng Anh phần HÌNH ẢNH minh họa sát với nội dung bài (chủ thể, bối cảnh, ánh sáng). Ảnh rõ, sáng, màu da tự nhiên, chân thực. KHÔNG mô tả màn hình, biểu đồ, dashboard hay giao diện phần mềm; nếu có laptop/điện thoại thì nhìn từ phía sau hoặc bên cạnh, không thấy nội dung màn hình. Nếu có người thì là người Việt Nam (da trắng sáng, tóc đen, mắt đen, nét mặt người Việt, trông như người bình thường ngoài đời), bối cảnh ở Việt Nam. Chỉ tả cảnh, KHÔNG tả bố cục, chữ, logo hay tên thương hiệu.\\n  image_text: tiêu đề chính in trên banner, tiếng Việt có dấu, IN HOA, tối đa 6 chữ, là ý mạnh nhất của bài. Mô tả có ưu đãi thì tiêu đề nêu ĐÚNG ưu đãi đó; không tự đặt ra con số hay lời hứa (tăng doanh thu X%...) không có trong mô tả.\\n  subheadline: tiêu đề phụ bổ trợ tiêu đề chính (không lặp lại chữ của tiêu đề), tiếng Việt có dấu, viết hoa chữ đầu câu và tên riêng (Facebook, TikTok...), tối đa 10 chữ.\\n  benefits: đúng 3 lợi ích ngắn lấy từ bài, mỗi ý tối đa 5 chữ, tiếng Việt có dấu, không có con số tự đặt ra.\\n  cta: chữ trên nút kêu gọi hành động, tiếng Việt có dấu, IN HOA, tối đa 4 chữ (ví dụ: ĐĂNG KÝ TƯ VẤN, NHẬN ƯU ĐÃI NGAY).\" }] }, contents: [{ role: 'user', parts: [{ text: 'Mô tả sản phẩm/dịch vụ cần quảng cáo: ' + ($('When Called').first().json.brief || '').replace(/#quanly/gi, '').trim() + (/#quanly/i.test($('When Called').first().json.brief || '') ? '\\n(Ảnh có quản lý công ty, là nam, làm nhân vật chính trong vai chuyên gia/giảng viên, mặc vest lịch sự; không tả khuôn mặt chi tiết. Nếu mô tả có yêu cầu cảnh (ví dụ \"Cảnh: quản lý đang chỉ cho học viên...\") thì image_prompt tả đúng cảnh đó, quản lý là người hướng dẫn, người còn lại là học viên Việt Nam trưởng thành khoảng 20-35 tuổi (trông như chủ shop/nhân viên văn phòng, không phải học sinh); phần cảnh chỉ dùng cho image_prompt, không đưa vào content. Không có yêu cầu cảnh thì quản lý đứng một mình, nhìn thẳng tự tin.)' : '') }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { content: { type: 'STRING' }, image_prompt: { type: 'STRING' }, image_text: { type: 'STRING' }, subheadline: { type: 'STRING' }, benefits: { type: 'ARRAY', items: { type: 'STRING' } }, cta: { type: 'STRING' } }, required: ['content', 'image_prompt', 'image_text', 'subheadline', 'benefits', 'cta'] } } }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000019",
+      "name": "Write Ads Paid",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        528
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api Gen Image"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ inlineData: ((($('Generate Image').first(0).json.candidates?.[0]?.content?.parts) || []).find((p) => p.inlineData) || {}).inlineData }, ...($('Parse Ads').first(0).json.manager_face ? [{ inlineData: { mimeType: 'image/jpeg', data: $('Parse Ads').first(0).json.manager_face } }] : []), { text: \"You are a Vietnamese proofreader. Read every piece of text visible in this ad image and compare it with the expected texts below. Letter case, line breaks and spacing do not matter, but every letter and every Vietnamese diacritic must match exactly. Set ok to false if any expected text is missing, misspelled or has a wrong or missing diacritic, or if there is other readable text that is not in the list (ignore tiny unreadable marks). In wrong, list each problem briefly in Vietnamese like 'GIÁM → GIẢM', or an empty string when ok. Also measure the layout on a 0-1000 scale where 0 is the top edge and 1000 the bottom edge of the image: headline_top is the y of the top edge of the headline text, button_bottom is the y of the bottom edge of the call-to-action button. If a second image (a close-up reference photo of a man) is attached, set same_person to true only if the main adult man shown as the instructor/expert in the ad is clearly the same person as in that reference (same face shape, eyes, nose, glasses and hairstyle), otherwise false; if no reference is attached, set same_person to true. Expected texts: \" + JSON.stringify((() => { const a = $('Parse Ads').first(0).json; const pct = a.image_text.match(/\\d+\\s*%/); return { headline: a.image_text, subheadline: a.subheadline, benefits: a.benefits, button: a.cta, badge: pct ? (/GIẢM/.test(a.image_text) ? '-' : '') + pct[0] : null }; })()) } ] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' }, wrong: { type: 'STRING' }, headline_top: { type: 'NUMBER' }, button_bottom: { type: 'NUMBER' }, same_person: { type: 'BOOLEAN' } }, required: ['ok', 'wrong', 'headline_top', 'button_bottom', 'same_person'] } } }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000016",
+      "name": "Check Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1712,
+        304
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ inlineData: ((($('Generate Image').first(0).json.candidates?.[0]?.content?.parts) || []).find((p) => p.inlineData) || {}).inlineData }, ...($('Parse Ads').first(0).json.manager_face ? [{ inlineData: { mimeType: 'image/jpeg', data: $('Parse Ads').first(0).json.manager_face } }] : []), { text: \"You are a Vietnamese proofreader. Read every piece of text visible in this ad image and compare it with the expected texts below. Letter case, line breaks and spacing do not matter, but every letter and every Vietnamese diacritic must match exactly. Set ok to false if any expected text is missing, misspelled or has a wrong or missing diacritic, or if there is other readable text that is not in the list (ignore tiny unreadable marks). In wrong, list each problem briefly in Vietnamese like 'GIÁM → GIẢM', or an empty string when ok. Also measure the layout on a 0-1000 scale where 0 is the top edge and 1000 the bottom edge of the image: headline_top is the y of the top edge of the headline text, button_bottom is the y of the bottom edge of the call-to-action button. If a second image (a close-up reference photo of a man) is attached, set same_person to true only if the main adult man shown as the instructor/expert in the ad is clearly the same person as in that reference (same face shape, eyes, nose, glasses and hairstyle), otherwise false; if no reference is attached, set same_person to true. Expected texts: \" + JSON.stringify((() => { const a = $('Parse Ads').first(0).json; const pct = a.image_text.match(/\\d+\\s*%/); return { headline: a.image_text, subheadline: a.subheadline, benefits: a.benefits, button: a.cta, badge: pct ? (/GIẢM/.test(a.image_text) ? '-' : '') + pct[0] : null }; })()) } ] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' }, wrong: { type: 'STRING' }, headline_top: { type: 'NUMBER' }, button_bottom: { type: 'NUMBER' }, same_person: { type: 'BOOLEAN' } }, required: ['ok', 'wrong', 'headline_top', 'button_bottom', 'same_person'] } } }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000020",
+      "name": "Check Text Paid",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1712,
+        528
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api Gen Image"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ inlineData: ((($('Generate Retry').first(0).json.candidates?.[0]?.content?.parts) || []).find((p) => p.inlineData) || {}).inlineData }, ...($('Parse Ads').first(0).json.manager_face ? [{ inlineData: { mimeType: 'image/jpeg', data: $('Parse Ads').first(0).json.manager_face } }] : []), { text: \"You are a Vietnamese proofreader. Read every piece of text visible in this ad image and compare it with the expected texts below. Letter case, line breaks and spacing do not matter, but every letter and every Vietnamese diacritic must match exactly. Set ok to false if any expected text is missing, misspelled or has a wrong or missing diacritic, or if there is other readable text that is not in the list (ignore tiny unreadable marks). In wrong, list each problem briefly in Vietnamese like 'GIÁM → GIẢM', or an empty string when ok. Also measure the layout on a 0-1000 scale where 0 is the top edge and 1000 the bottom edge of the image: headline_top is the y of the top edge of the headline text, button_bottom is the y of the bottom edge of the call-to-action button. If a second image (a close-up reference photo of a man) is attached, set same_person to true only if the main adult man shown as the instructor/expert in the ad is clearly the same person as in that reference (same face shape, eyes, nose, glasses and hairstyle), otherwise false; if no reference is attached, set same_person to true. Expected texts: \" + JSON.stringify((() => { const a = $('Parse Ads').first(0).json; const pct = a.image_text.match(/\\d+\\s*%/); return { headline: a.image_text, subheadline: a.subheadline, benefits: a.benefits, button: a.cta, badge: pct ? (/GIẢM/.test(a.image_text) ? '-' : '') + pct[0] : null }; })()) } ] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' }, wrong: { type: 'STRING' }, headline_top: { type: 'NUMBER' }, button_bottom: { type: 'NUMBER' }, same_person: { type: 'BOOLEAN' } }, required: ['ok', 'wrong', 'headline_top', 'button_bottom', 'same_person'] } } }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000021",
+      "name": "Check Retry Paid",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2368,
+        752
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api Gen Image"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { try { const v = JSON.parse(($json.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('')); return v.ok !== false && v.same_person !== false && !(v.headline_top && v.headline_top < 164); } catch (e) { return true; } })() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a0000000-0000-4000-8000-000000000017",
+      "name": "Text OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ inlineData: ((($('Generate Retry').first(0).json.candidates?.[0]?.content?.parts) || []).find((p) => p.inlineData) || {}).inlineData }, ...($('Parse Ads').first(0).json.manager_face ? [{ inlineData: { mimeType: 'image/jpeg', data: $('Parse Ads').first(0).json.manager_face } }] : []), { text: \"You are a Vietnamese proofreader. Read every piece of text visible in this ad image and compare it with the expected texts below. Letter case, line breaks and spacing do not matter, but every letter and every Vietnamese diacritic must match exactly. Set ok to false if any expected text is missing, misspelled or has a wrong or missing diacritic, or if there is other readable text that is not in the list (ignore tiny unreadable marks). In wrong, list each problem briefly in Vietnamese like 'GIÁM → GIẢM', or an empty string when ok. Also measure the layout on a 0-1000 scale where 0 is the top edge and 1000 the bottom edge of the image: headline_top is the y of the top edge of the headline text, button_bottom is the y of the bottom edge of the call-to-action button. If a second image (a close-up reference photo of a man) is attached, set same_person to true only if the main adult man shown as the instructor/expert in the ad is clearly the same person as in that reference (same face shape, eyes, nose, glasses and hairstyle), otherwise false; if no reference is attached, set same_person to true. Expected texts: \" + JSON.stringify((() => { const a = $('Parse Ads').first(0).json; const pct = a.image_text.match(/\\d+\\s*%/); return { headline: a.image_text, subheadline: a.subheadline, benefits: a.benefits, button: a.cta, badge: pct ? (/GIẢM/.test(a.image_text) ? '-' : '') + pct[0] : null }; })()) } ] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' }, wrong: { type: 'STRING' }, headline_top: { type: 'NUMBER' }, button_bottom: { type: 'NUMBER' }, same_person: { type: 'BOOLEAN' } }, required: ['ok', 'wrong', 'headline_top', 'button_bottom', 'same_person'] } } }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000018",
+      "name": "Check Retry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2368,
+        528
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "content": "## 1. Nhận lệnh\nBot GMF chuyển lệnh `/ads <mô tả>` sang đây. Lấy token Zalo, thiếu mô tả thì gửi hướng dẫn, đủ thì báo \"đã nhận\".",
+        "height": 640,
+        "width": 900,
+        "color": 5
+      },
+      "id": "a0000000-0000-4000-8000-000000000031",
+      "name": "Ghi chú 31",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 2. Viết content\nGemini viết bài quảng cáo + tiêu đề, lợi ích, nút cho ảnh.\nKey miễn phí trước, hết lượt → **Write Ads Paid**. Lỗi hẳn → báo \"AI quá tải\".",
+        "height": 640,
+        "width": 520,
+        "color": 4
+      },
+      "id": "a0000000-0000-4000-8000-000000000032",
+      "name": "Ghi chú 32",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        880,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 3. Tạo ảnh + kiểm tra\n**Generate Image** vẽ bằng Nano Banana 2.1 (~870đ) theo khung bố cục (có `#quanly` thì gửi kèm ảnh quản lý).\nGemini Flash kiểm tra chính tả, vị trí tiêu đề/nút và khuôn mặt quản lý. Không đạt → **Generate Retry** vẽ lại 1 lần bằng 3 Pro Image (~3.500đ).",
+        "height": 860,
+        "width": 1160,
+        "color": 6
+      },
+      "id": "a0000000-0000-4000-8000-000000000033",
+      "name": "Ghi chú 33",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1424,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 4. Ghép thương hiệu + gửi nhóm\nĐẩy ảnh cho nút cách footer, ghép logo + footer, upload lên Zalo, gửi ảnh rồi gửi content kèm footer GOSTECH. Ảnh lỗi vẫn gửi kèm cảnh báo ⚠️.",
+        "height": 640,
+        "width": 1380,
+        "color": 3
+      },
+      "id": "a0000000-0000-4000-8000-000000000034",
+      "name": "Ghi chú 34",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2608,
+        80
+      ]
+    }
+  ],
+  "connections": {
+    "When Called": {
+      "main": [
+        [
+          {
+            "node": "Get Zalo Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Zalo Token": {
+      "main": [
+        [
+          {
+            "node": "Has Brief?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Brief?": {
+      "main": [
+        [
+          {
+            "node": "Send Ack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Usage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Ack": {
+      "main": [
+        [
+          {
+            "node": "Write Ads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Ads": {
+      "main": [
+        [
+          {
+            "node": "Parse Ads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Write Ads Paid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Ads Paid": {
+      "main": [
+        [
+          {
+            "node": "Parse Ads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send AI Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Ads": {
+      "main": [
+        [
+          {
+            "node": "Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send AI Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image": {
+      "main": [
+        [
+          {
+            "node": "Check Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Text": {
+      "main": [
+        [
+          {
+            "node": "Text OK?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Text Paid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Text Paid": {
+      "main": [
+        [
+          {
+            "node": "Text OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text OK?": {
+      "main": [
+        [
+          {
+            "node": "To File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Retry": {
+      "main": [
+        [
+          {
+            "node": "Check Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "To File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Retry": {
+      "main": [
+        [
+          {
+            "node": "To File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Retry Paid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Retry Paid": {
+      "main": [
+        [
+          {
+            "node": "To File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "To File": {
+      "main": [
+        [
+          {
+            "node": "Fit Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fit Image": {
+      "main": [
+        [
+          {
+            "node": "Brand Overlay",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Brand Overlay": {
+      "main": [
+        [
+          {
+            "node": "Upload Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Image": {
+      "main": [
+        [
+          {
+            "node": "Build Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Messages": {
+      "main": [
+        [
+          {
+            "node": "Send Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "tags": []
+}

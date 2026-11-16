@@ -1,0 +1,1564 @@
+{
+  "name": "AI viết bài theo tiêu đề trên Sheet (chờ duyệt)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000001",
+      "name": "Mỗi ngày 8h"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        224,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000005",
+      "name": "Đọc lịch đăng",
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gom dữ liệu: số liệu Ads + bài fanpage nhiều tương tác + bài đã có trong Sheet\nconst rows = (n) => { try { return $(n).all().map(i => i.json).filter(r => r && Object.keys(r).length); } catch (e) { return []; } };\nconst ads = [...rows('Đọc Ads hôm qua'), ...rows('Đọc Ads hôm nay')]\n  .filter(r => r['Chiến dịch'] && r['Chiến dịch'] !== 'Không có chiến dịch nào chạy');\nlet posts = [];\ntry { posts = $('Bài fanpage gần đây').first().json.data || []; } catch (e) {}\nconst lich = rows('Đọc lịch đăng').filter(r => String(r['Nội dung'] || '').trim());\n\n// Ads: xếp theo chi phí/kết quả (rẻ nhất trước), lấy tối đa 10 dòng gần nhất\nconst num = (s) => Number(String(s || '').replace(/\\./g, '').replace(/,/g, '')) || 0;\nconst adsTop = ads.filter(r => num(r['Tổng kết quả']) > 0)\n  .sort((a, b) => num(a['Chi phí/kết quả']) - num(b['Chi phí/kết quả'])).slice(0, 10)\n  .map(r => `- [${r['Ngày']}] ${r['Chiến dịch']}: chi ${r['Chi tiêu']}đ, ${r['Tổng kết quả']} kết quả, ${r['Chi phí/kết quả']}đ/kết quả\\n  QC: ${String(r['Chi tiết QC'] || '').slice(0, 400)}\\n  Target: ${String(r['Target'] || '').slice(0, 300)}`);\n\n// Bài fanpage: xếp theo tương tác\nconst score = (p) => ((p.reactions && p.reactions.summary && p.reactions.summary.total_count) || 0)\n  + 2 * ((p.comments && p.comments.summary && p.comments.summary.total_count) || 0) + 3 * ((p.shares && p.shares.count) || 0);\nconst postTop = posts.filter(p => p.message).sort((a, b) => score(b) - score(a)).slice(0, 5)\n  .map(p => `- (${score(p)} điểm tương tác) ${p.message.replace(/\\s+/g, ' ').slice(0, 300)}`);\n\n// Bài đã viết gần đây (tránh trùng chủ đề)\nconst recent = lich.slice(-15).map(r => `- ${String(r['Nội dung'] || '').replace(/\\s+/g, ' ').slice(0, 120)}`);\nconst recentLayouts = lich.slice(-2).map(r => (String(r['Ghi chú'] || '').match(/bố cục: ([a-z_0-9]+)/) || [])[1]).filter(Boolean);\n// Kiểu viết: chọn ngẫu nhiên, KHÔNG trùng 2 bài gần nhất\nconst STYLES = {\n  danh_sach: 'DANH SÁCH: HOOK 1-2 câu + 3-5 ý (tối đa 10 nếu tiêu đề hứa nhiều hơn). Mỗi ý gồm: 1 dòng bắt đầu bằng emoji số 1️⃣ 2️⃣ 3️⃣ … 🔟 (KHÔNG BAO GIỜ ghép 2 emoji số như 1️⃣1️⃣) nêu ý chính ngắn gọn, ngay dòng dưới là phần giải thích cụ thể TỐI ĐA 2 câu ngắn, dưới 35 chữ (bấm ở đâu, dùng hàm/công thức gì, ví dụ thực tế). Các ý cách nhau 1 dòng trống; kết bằng một lời khuyên.',\n  ke_chuyen: 'KỂ CHUYỆN: mở bằng một tình huống đời thật của một nhân vật cụ thể (ví dụ chị kế toán, bạn nhân viên marketing, anh chủ shop), có vấn đề, bước ngoặt, cách giải quyết và bài học rút ra. Không đánh số, viết thành các đoạn ngắn 1-2 câu, vài emoji gợi cảm xúc ở đầu đoạn.',\n  hoi_dap: 'HỎI - ĐÁP: mở bằng câu hỏi người đọc hay thắc mắc, sau đó 3-4 cặp hỏi đáp ngắn, câu hỏi bắt đầu bằng ❓ và câu trả lời bắt đầu bằng 💡.',\n  sai_dung: 'SAI vs ĐÚNG: 3 cặp so sánh cách làm sai và cách làm đúng, dòng sai bắt đầu bằng ❌, dòng đúng bắt đầu bằng ✅, mỗi cặp cách nhau một dòng trống.',\n  lam_tuong: 'LẦM TƯỞNG vs SỰ THẬT: phá vỡ 2-3 lầm tưởng phổ biến, mỗi lầm tưởng bắt đầu bằng 🚫 và sự thật bắt đầu bằng 👉, giọng hơi bất ngờ, gây tò mò.',\n  goc_nhin: 'GÓC NHÌN CÁ NHÂN: giọng trò chuyện thân mật như đang tâm sự với người đọc, nêu một quan điểm rõ ràng (có thể hơi trái chiều), 3-4 đoạn ngắn, ít emoji, kết bằng một câu hỏi mở kéo bình luận.',\n  checklist: 'CHECKLIST TỰ KIỂM TRA: mời người đọc tự kiểm tra bản thân với 5-6 dòng ngắn bắt đầu bằng ☑️, sau đó gợi ý: được bao nhiêu dấu tick thì nên làm gì.',\n};\nconst STYLE_KEYS = Object.keys(STYLES);\nconst recentStyles = lich.slice(-2).map(r => (String(r['Ghi chú'] || '').match(/kiểu viết: ([a-z_]+)/) || [])[1]).filter(Boolean);\nconst pool = STYLE_KEYS.filter(k => !recentStyles.includes(k));\nconst chon = $('Chọn tiêu đề').first().json;\nconst nextId = chon.id;\nconst tieuDe = chon.tieuDe;\n// Kiểu viết chọn theo TIÊU ĐỀ: tiêu đề hứa \"5 cách\" thì phải là danh sách đủ 5 ý; chỉ chọn ngẫu nhiên khi tiêu đề không gợi ý cấu trúc\nconst tl = String(tieuDe || '').toLowerCase();\n// Chỉ coi là \"số ý\" khi con số đứng ngay trước danh từ đếm được (5 cách, 3 hàm, 7 mẹo…); \"15 phút\", \"2026\", \"gấp đôi\" không tính\nconst DEM = 'cách|bước|mẹo|lỗi|sai lầm|lầm tưởng|hàm|phím tắt|công thức|thủ thuật|kỹ năng|kĩ năng|lý do|lí do|dấu hiệu|ý tưởng|tính năng|công cụ|nguyên tắc|lưu ý|câu hỏi|thói quen|việc|điều|bí quyết|chiêu|tuyệt chiêu|loại|kiểu|phần mềm|ứng dụng|app|biểu đồ|mẫu|template';\nconst mSo = tl.match(new RegExp('(?:^|[^0-9])([0-9]{1,2})[ ]+(?:' + DEM + ')(?=[^a-zà-ỹ]|$)'));\nconst soY = mSo && Number(mSo[1]) >= 2 && Number(mSo[1]) <= 10 ? mSo[1] : '';\nconst soNhieu = mSo && Number(mSo[1]) > 10 ? mSo[1] : '';\nlet style;\nif (/lầm tưởng|sự thật|hiểu lầm|hiểu sai/.test(tl)) style = 'lam_tuong';\nelse if (/sai lầm|lỗi |mắc lỗi|sai vs|đúng vs|sai và đúng/.test(tl)) style = 'sai_dung';\nelse if (/checklist|tự kiểm tra|bạn có đang/.test(tl)) style = 'checklist';\nelse if (soY || soNhieu || /^(cách|hướng dẫn|các bước)/.test(tl)) style = 'danh_sach';\nelse if (/\\?\\s*$/.test(String(tieuDe || ''))) style = 'hoi_dap';\nelse style = (pool.filter(k => ['ke_chuyen', 'goc_nhin', 'hoi_dap', 'danh_sach'].includes(k))[Math.floor(Math.random() * 4)]) || 'danh_sach';\n\nconst system = `Bạn là một chuyên gia viết content viral và đã có kinh nghiệm hơn 10 năm viết content cho các thương hiệu lớn. Bạn viết cho fanpage \"Học Viện Digital - GOS Academy\" (đào tạo kỹ năng số, Google Sheets, báo cáo, tự động hóa, marketing). Nhiệm vụ: viết 1 bài đăng THEO ĐÚNG TIÊU ĐỀ được giao, sao cho:\n\n1. Độ dài 180-300 từ, KHÔNG vượt 300 từ (đếm cả tiêu đề); thà ít ý mà sâu còn hơn nhiều ý dài dòng\n2. BẮT BUỘC xuống dòng thật sự bằng ký tự xuống dòng (trong chuỗi JSON viết là \\\\n), TUYỆT ĐỐI không dùng dấu hai chấm thay cho xuống dòng: câu mở đầu một dòng riêng, các đoạn/ý cách nhau một dòng trống (một dòng trống). Tuyệt đối không viết dồn thành một đoạn\n3. Dòng đầu tiên của bài là TIÊU ĐỀ được giao (giữ nguyên ý và từ khóa chính, được viết in hoa), sau đó là nội dung bám sát đúng tiêu đề, không lan sang chủ đề khác\n4. Nội dung phải THỰC CHIẾN và CỤ THỂ, đọc xong làm theo được ngay: mỗi ý nói rõ làm gì, ở đâu (tên menu, nút, tên hàm/công thức thật), kèm ví dụ ngắn hoặc tình huống công việc văn phòng ở Việt Nam. CẤM câu sáo rỗng chung chung (“tiết kiệm thời gian”, “tối ưu hiệu suất”, “nâng cao hiệu quả”, “làm việc chuyên nghiệp hơn”) nếu không chỉ ra cụ thể bằng cách nào; không viết điều ai cũng biết. Câu ngay sau tiêu đề phải chạm đúng một tình huống/nỗi đau cụ thể của người đọc\n5. Viết ĐÚNG KIỂU VIẾT được giao trong tin nhắn. Dùng emoji tự nhiên đúng như kiểu viết mô tả, câu kêu gọi cuối bài có thể bắt đầu bằng 👉; không chèn emoji giữa câu, không lạm dụng\n6. Loại bỏ hoàn toàn markdown hoặc các ký tự ** khỏi nội dung\n7. Trả ra JSON gồm: \"content\" là content hoàn chỉnh (KHÔNG viết thông tin liên hệ/chữ ký cuối bài, hệ thống tự thêm), \"shorten\" là tóm tắt nội dung trong một câu ngắn gồm 5-7 chữ, \"image_title\" là tiêu đề in trên ảnh: lấy từ TIÊU ĐỀ được giao, tiếng Việt có dấu, IN HOA, tối đa 7 chữ (tiêu đề dài hơn thì rút gọn, giữ từ khóa chính), \"image_tag\" là nhãn chủ đề nhỏ trên ảnh: tiếng Việt có dấu, IN HOA, 2-4 chữ (ví dụ: MẸO GOOGLE SHEETS, KỸ NĂNG BÁO CÁO), \"image_visual\" là mô tả bằng tiếng Anh Ý TƯỞNG HÌNH ẢNH sáng tạo, độc đáo cho riêng bài này (phong cách, cảnh, góc nhìn, bố cục tự chọn; mỗi bài một kiểu khác hẳn, tránh lối mòn \"chữ to + đồ vật 3D nhỏ trên nền kem\"), có thể có người (dân văn phòng, học viên, giảng viên người Việt...) nếu giúp ảnh sinh động, gần gũi hơn, KHÔNG có màn hình hiện chữ hoặc số đọc được, \"image_number\" là con số chính nếu bài dạng danh sách (ví dụ \"3\"), không có thì để chuỗi rỗng, \"ly_do\" là 1 câu giải thích góc viết đã chọn cho tiêu đề này.\n\nKhông bịa số liệu, giá, ưu đãi hay cam kết.`;\n\nconst user = `TIÊU ĐỀ BÀI VIẾT (bắt buộc bám sát): ${tieuDe}\n\nBÀI ĐÃ VIẾT GẦN ĐÂY (tham khảo để không lặp lại cách viết):\n${recent.length ? recent.join('\\n') : '(Chưa có)'}\n\nBỐ CỤC ẢNH ĐÃ DÙNG GẦN ĐÂY (KHÔNG chọn lại): ${recentLayouts.join(', ') || '(chưa có)'}\n\nKIỂU VIẾT ĐƯỢC GIAO CHO BÀI NÀY: ${STYLES[style]}\n${soY ? `SỐ Ý BẮT BUỘC: tiêu đề hứa ${soY} ý nên bài PHẢI có đúng ${soY} ý (đánh số 1 đến ${soY}), mỗi ý đúng với từ khóa trong tiêu đề. Ưu tiên bố cục ảnh so_lon với image_number = \"${soY}\".` : soNhieu ? `Tiêu đề hứa ${soNhieu} ý (nhiều hơn 10): vẫn đủ ${soNhieu} ý nhưng GOM thành 3-4 nhóm, mỗi nhóm có 1 dòng tên nhóm bắt đầu bằng emoji hợp nội dung, các ý trong nhóm mỗi ý 1 dòng rất ngắn bắt đầu bằng \"•\"; KHÔNG dùng emoji số; các nhóm cách nhau 1 dòng trống. Ưu tiên bố cục ảnh so_lon với image_number = \"${soNhieu}\".` : 'Tiêu đề KHÔNG hứa số ý cụ thể: con số trong tiêu đề (nếu có, ví dụ \"15 phút\") chỉ là thời gian/con số minh họa, KHÔNG phải số ý; bài chỉ 3-5 ý chính, không dùng bố cục so_lon và để image_number trống.'}\n\nHãy viết 1 bài theo đúng tiêu đề và kiểu viết trên. Nội dung phải giữ đúng lời hứa của tiêu đề (tiêu đề nói \"cách\" thì viết cách làm, nói \"sai lầm\" thì viết sai lầm); kiểu viết chỉ là giọng văn và cách trình bày, không được đổi nội dung khác với tiêu đề.`;\n\nconst body = {\n  systemInstruction: { parts: [{ text: system }] },\n  contents: [{ role: 'user', parts: [{ text: user }] }],\n  generationConfig: {\n    temperature: 0.9,\n    responseMimeType: 'application/json',\n    responseSchema: { type: 'OBJECT', properties: { content: { type: 'STRING' }, shorten: { type: 'STRING' }, image_title: { type: 'STRING' }, image_tag: { type: 'STRING' }, image_visual: { type: 'STRING' }, image_number: { type: 'STRING' }, ly_do: { type: 'STRING' } }, required: ['content', 'shorten', 'image_title', 'image_tag', 'image_visual', 'image_number', 'ly_do'] }\n  }\n};\nreturn [{ json: { body, style, soY: soY || soNhieu, recentLayouts, nextId, tieuDe, row_number: chon.row_number } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000006",
+      "name": "Chuẩn bị viết bài"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1520,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000007",
+      "name": "Viết bài (model rẻ)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Chuẩn bị viết bài').first().json.body) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1744,
+        384
+      ],
+      "id": "e0000000-0000-4000-8000-000000000008",
+      "name": "Viết bài (dự phòng)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Model đôi khi dùng dấu \":\" thay cho xuống dòng (bài dính 1 khối) -> tách lại thành dòng\nfunction fixColon(s) {\n  s = String(s || '');\n  if ((s.match(/\\n/g) || []).length >= 3) return s;\n  const ICON = '(?:[0-9]\\\\uFE0F?\\\\u20E3|🔟|👉|💡|✅|❌|☑️|🚫|❓|📌|🔹|•)';\n  return s\n    .replace(new RegExp('\\\\s*:\\\\s*(?=' + ICON + ')', 'gu'), '\\n\\n')      // \":1️⃣ ...\" -> xuống 2 dòng trước mỗi ý\n    .replace(/([.!?…”)\\]])\\s*:\\s+/g, '$1\\n')                          // \"ý chính.: giải thích\" -> giải thích dòng dưới\n    .replace(/^([^\\n]{8,200}?[?!])\\s*:\\s*/, '$1\\n\\n')                    // tiêu đề dính câu mở đầu\n    .replace(/^([^\\n]{8,200}?[A-ZÀ-Ỹa-zà-ỹ0-9]):(?=[A-ZÀ-Ỹ])/, '$1\\n\\n')  // \"TIÊU ĐỀ:CÂU MỞ ĐẦU\"\n    .replace(/\\n{3,}/g, '\\n\\n').trim();\n}\n\n// Đọc kết quả Gemini (model rẻ hoặc model dự phòng)\nconst r = $input.first().json;\nconst text = (((r.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || '').join('') || '';\nlet out;\ntry { out = JSON.parse(text); } catch (e) { throw new Error('Gemini không trả JSON hợp lệ: ' + text.slice(0, 300)); }\nconst clean = (s) => String(s || '').replace(/\\*\\*/g, '').replace(/`/g, '').replace(/^#+\\s*/gm, '').trim();\nconst FOOTER = \"---***---\\nCÔNG TY TNHH GOSTECH\\nGiải pháp phát triển doanh nghiệp\\n📍 Trụ sở chính: Số nhà 11, ngõ 245/116/27 Phố Định Công, Phường Định Công, Hà Nội\\n📍 Văn phòng: Tòa A3 Vinhomes Hàm Nghi, Phường Từ Liêm, Hà Nội\\n📞 Hotline: 0968 343 342\\n🌐 Website: gostech.vn | hocviendigital.vn\";\nconst withFooter = (s) => { s = String(s || '').trim(); return !s || s.includes('CÔNG TY TNHH GOSTECH') ? s : s + '\\n\\n' + FOOTER; };\n// Nếu AI viết dồn một đoạn: tách HOOK, tách các ý đánh số / Thứ nhất..., mỗi câu dài một dòng\nfunction fixBreaks(s) {\n  s = String(s || '').trim();\n  if ((s.match(/\\n/g) || []).length >= 3) return s;\n  s = s.replace(/^([^.!?\\n]{8,160}[!?])\\s+/, '$1\\n\\n');\n  s = s.replace(/\\s+(?=(\\d{1,2}[.)]\\s|Thứ (nhất|hai|ba|tư|năm|sáu)\\b|Cuối cùng\\b|Đầu tiên\\b|Tiếp theo\\b))/g, '\\n\\n');\n  s = s.replace(/([.!?])\\s+(?=[A-ZÀ-Ỹ])/g, '$1\\n\\n');\n  return s.replace(/\\n{3,}/g, '\\n\\n').trim();\n}\n// Emoji mặc định: ý đánh số \"1.\" -> 1️⃣; dòng ý không có emoji ở đầu thì thêm ✅\nfunction addEmoji(s) {\n  const keys = ['0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];\n  const lines = String(s || '').split('\\n');\n  return lines.map((l, i) => {\n    const t = l.trim();\n    if (!t || t.startsWith('---***---')) return l;\n    const m = t.match(/^(\\d{1,2})[.)]\\s+(.*)$/);\n    if (m) return (keys[Number(m[1])] || '✅') + ' ' + m[2];\n    return l;\n  }).join('\\n');\n}\nout.content = fixBreaks(out.content);\nif ($('Chuẩn bị viết bài').first().json.style === 'danh_sach') out.content = addEmoji(out.content);\nconst content = withFooter(fixColon(clean(out.content))), shorten = clean(out.shorten);\nif (!content || !shorten) throw new Error('Thiếu content hoặc shorten');\nconst title = clean(out.image_title || shorten).toUpperCase();\nconst tag = clean(out.image_tag || 'KỸ NĂNG SỐ').toUpperCase();\nconst visual = clean(out.image_visual || 'a cute modern 3D illustration of a spreadsheet, bar charts and a clock');\n// Không dùng bố cục cố định nữa: AI tự sáng tạo phong cách + bố cục cho từng ảnh\nconst layout = 'AI tự sáng tạo';\nconst V = visual;\nconst NUM = $('Chuẩn bị viết bài').first().json.style === 'danh_sach' ? String($('Chuẩn bị viết bài').first().json.soY || '') : '';\nconst YC = '';\nconst LAYOUT = 'Invent your OWN original composition and art style for this specific topic; do not use a generic template and do not repeat the usual look (big title + small 3D object on a cream background). '\n  + 'Main idea: ' + V + '. Choose freely whatever style tells it best and stops the scroll in a Facebook feed, for example: bold editorial illustration, flat vector, paper-cut layers, isometric scene, realistic photo scene, clay 3D, collage, minimal geometric, cinematic lighting... with your own camera angle, depth and arrangement. '\n  + (NUM ? 'You may feature the number \"' + NUM + '\" prominently. ' : '')\n  + (YC ? 'Follow this request about the image: ' + YC + '. ' : '')\n  + 'The title must remain the large, clear, instantly readable focal point.';\nconst imgPrompt = [\n  'Design a square 1:1 cover image for an educational Facebook post of a Vietnamese digital-skills academy. It is a knowledge-sharing post, NOT an advertisement: no call-to-action button, no benefit list, no price, no discount badge. People are welcome whenever they make the story more vivid (for example Vietnamese office workers, students or a teacher): natural, friendly, well-drawn faces and hands, never celebrities or real identifiable persons.',\n  'COMPOSITION: ' + LAYOUT,\n  'TEXT: a small topic label \"' + tag + '\" (styled to fit your design, e.g. pill, ribbon or sticker, in brand colors) and the title \"' + title + '\" in a bold, highly readable sans-serif with correct Vietnamese diacritics; typography, size contrast and color treatment are your choice within the brand colors, with the key words emphasized.',\n  'BACKGROUND AND MARGINS (strict): the background (color, texture or scene) runs seamlessly from edge to edge over the whole canvas, with NO bands, boxes, panels, cards, frames, borders or outlines anywhere around the edges or corners. Simply leave generous breathing room: nothing near the top-left (left third, top fifth, a logo is added there later) and NOTHING AT ALL in the bottom sixth of the canvas (a footer bar is added there later and would cover it; never put the title or the tag there); the text starts about one fifth down. Never draw a big card, panel or frame that holds the whole design. Keep all text inside safe margins.',\n  'Colors: only orange #FF851B, orange-red #EF3522, dark red #780D0D, white, cream #FFF5EE and dark gray #262626 (natural materials and colors are fine in photo-like scenes; keep the overall palette on brand). No neon, no metallic or glitter effects.',\n  'Any spreadsheet, chart, document or screen shows only abstract shapes, cells and bars, never letters or numbers. Copy every text above exactly with correct Vietnamese diacritics and do NOT add any other text, letters, numbers, watermarks, brand names, phone numbers or websites anywhere.'\n].join('\\n\\n');\nconst imgBody = { contents: [{ parts: [{ text: imgPrompt }] }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '1:1' } } };\nreturn [{ json: { content, layout, shorten: title, ly_do: clean(out.ly_do), imgBody, textModel: r.modelVersion || '' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000009",
+      "name": "Đọc kết quả viết bài"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-image:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.imgBody) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2384,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000010",
+      "name": "Tạo ảnh (model rẻ)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api Gen Image"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "img1",
+              "leftValue": "={{ !!(($json.candidates || [])[0]?.content?.parts || []).find(p => p.inlineData && p.inlineData.data) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2608,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000011",
+      "name": "Có ảnh chưa?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Đọc kết quả viết bài').first().json.imgBody) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2832,
+        384
+      ],
+      "id": "e0000000-0000-4000-8000-000000000012",
+      "name": "Tạo ảnh (dự phòng)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api Gen Image"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ảnh AI + logo + thanh footer để bước sau ghép lại\nconst pick = (n) => { try { const j = $(n).first().json; return ((j.candidates || [])[0]?.content?.parts || []).find(p => p.inlineData && p.inlineData.data) ? j : null; } catch (e) { return null; } };\nconst r = pick('Tạo ảnh (dự phòng)') || pick('Tạo ảnh (model rẻ)') || {};\nlet kiemTra = '';\ntry { const v = JSON.parse(($('Kiểm tra ảnh').first().json.candidates[0].content.parts || []).map(p => p.text || '').join('')); kiemTra = v.ok ? 'ảnh đạt' : 'model rẻ lỗi: ' + v.loi; } catch (e) {}\n\nconst part = ((r.candidates || [])[0]?.content?.parts || []).find(p => p.inlineData && p.inlineData.data);\nif (!part) throw new Error('Cả 2 model ảnh đều không trả về ảnh');\nconst mime = part.inlineData.mimeType || 'image/png';\nconst ext = mime.includes('jpeg') ? 'jpg' : 'png';\nconst header = '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';\nconst footer = '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';\nreturn [{ json: { imageModel: (r.modelVersion || '') + (kiemTra ? ' (' + kiemTra + ')' : '') }, binary: {\n  data: await this.helpers.prepareBinaryData(Buffer.from(part.inlineData.data, 'base64'), 'ai.' + ext, mime),\n  header: await this.helpers.prepareBinaryData(Buffer.from(header, 'base64'), 'header.png', 'image/png'),\n  footer: await this.helpers.prepareBinaryData(Buffer.from(footer, 'base64'), 'footer.png', 'image/png'),\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3040,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000013",
+      "name": "Lấy file ảnh"
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "POST",
+        "graphApiVersion": "v23.0",
+        "node": "<FACEBOOK_PAGE_ID>",
+        "edge": "photos",
+        "sendBinaryData": true,
+        "binaryPropertyName": "data",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "published",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        3472,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000014",
+      "name": "Tải ảnh lên Trang (ẩn)",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Graph API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "graphApiVersion": "v23.0",
+        "node": "={{ $json.id }}",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "fields",
+                "value": "images"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        3680,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000015",
+      "name": "Lấy link ảnh",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Graph API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ghi bài vào đúng dòng của tiêu đề (theo row_number), trạng thái Chờ duyệt\nconst t = $('Đọc kết quả viết bài').first().json;\nconst id = $('Chuẩn bị viết bài').first().json.nextId;\nconst imgs = $input.first().json.images || [];\nconst url = (imgs.sort((a, b) => b.width - a.width)[0] || {}).source || '';\nconst now = DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm');\nlet im = 'chưa có ảnh (/tieude chỉ viết chữ)';\ntry { if ($('Lấy file ảnh').isExecuted) im = $('Lấy file ảnh').first().json.imageModel; } catch (e) {}\ntry { if ($('Ảnh gửi kèm').isExecuted) im = 'ảnh tự gửi kèm /tieude'; } catch (e) {}\nconst preview = t.content.length > 1800 ? t.content.slice(0, 1800) + '…(xem đủ trong Sheet)' : t.content;\nreturn [{ json: {\n  row: { 'row_number': $('Chuẩn bị viết bài').first().json.row_number, 'ID': id, 'Tiêu đề': $('Chuẩn bị viết bài').first().json.tieuDe, 'Nội dung': t.content, 'Link ảnh': url, 'Thời gian đăng': '', 'Trạng thái': 'Chờ duyệt',\n         'Ghi chú': `AI viết ${now} | ảnh: ${im} | bố cục: ${t.layout} | kiểu viết: ${$('Chuẩn bị viết bài').first().json.style} | viết theo tiêu đề trên Sheet | ${t.ly_do}` },\n  zaloCaption: `📝 BÀI #${id} CHỜ DUYỆT\\n\\n${preview}`.slice(0, 2000),\n  zaloLenh: `Gõ \"duyet ${id}\" để đăng, \"bo ${id}\" để bỏ.\\nMuốn sửa chữ: sửa trong Sheet trước rồi mới gõ duyet.`,\n  photoUrl: url, id\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3904,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000016",
+      "name": "Tạo dòng Chờ duyệt"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $json.row['row_number'] }}",
+            "ID": "={{ $json.row['ID'] }}",
+            "Tiêu đề": "={{ $json.row['Tiêu đề'] }}",
+            "Nội dung": "={{ $json.row['Nội dung'] }}",
+            "Link ảnh": "={{ $json.row['Link ảnh'] }}",
+            "Thời gian đăng": "={{ $json.row['Thời gian đăng'] }}",
+            "Trạng thái": "={{ $json.row['Trạng thái'] }}",
+            "Ghi chú": "={{ $json.row['Ghi chú'] }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Tiêu đề",
+              "displayName": "Tiêu đề",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nội dung",
+              "displayName": "Nội dung",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Link ảnh",
+              "displayName": "Link ảnh",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Thời gian đăng",
+              "displayName": "Thời gian đăng",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Trạng thái",
+              "displayName": "Trạng thái",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ghi chú",
+              "displayName": "Ghi chú",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        4128,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000017",
+      "name": "Ghi vào lịch đăng",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "oa_id",
+              "keyValue": "<ZALO_OA_ID>"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4352,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000030",
+      "name": "Lấy token Zalo",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lấy ảnh để tải lên Zalo: ảnh AI đã ghép logo + footer; ảnh tự gửi thì lấy bản JPEG đã lưu trên Fanpage (file gốc có thể > 1MB)\ntry { if ($('Ghép logo và footer').isExecuted) return [{ json: {}, binary: { data: $('Ghép logo và footer').first().binary.data } }]; } catch (e) {}\nconst U = $('Tạo dòng Chờ duyệt').first().json.photoUrl;\nif (!U) return [{ json: { khongAnh: true } }];\nconst buf = await this.helpers.httpRequest({ method: 'GET', url: U, encoding: 'arraybuffer', json: false });\nreturn [{ json: {}, binary: { data: await this.helpers.prepareBinaryData(Buffer.from(buf), 'anh.jpg', 'image/jpeg') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4560,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000031",
+      "name": "Ảnh cho Zalo"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v2.0/oa/upload/image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4784,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000032",
+      "name": "Zalo: tải ảnh",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tin 1: ảnh + tiêu đề; tin 2..n: nội dung bài (Zalo tối đa 2000 ký tự/tin); tin cuối: hướng dẫn duyệt\nconst r = $('Tạo dòng Chờ duyệt').first().json;\nconst id = r.id;\nlet att = null;\ntry { att = $input.first().json.data?.attachment_id || null; } catch (e) {}\nconst msgs = [];\nconst head = `📝 BÀI #${id} CHỜ DUYỆT\\nTiêu đề: ${r.row['Tiêu đề']}`;\nif (att) msgs.push({ text: head, attachment: { type: 'template', payload: { template_type: 'media', elements: [{ media_type: 'image', attachment_id: att }] } } });\nelse if (!r.row['Link ảnh']) msgs.push({ text: head + `\\n🖼️ Bài CHƯA CÓ ẢNH (chỉ viết chữ).\\n📎 Gửi ảnh vuông tự thiết kế vào nhóm, ghi chú: /dunganh ${id}\\n🤖 Hoặc gõ /anh ${id} [yêu cầu] để AI vẽ ảnh` });\nelse msgs.push({ text: head + '\\n⚠️ Chưa gửi được ảnh vào Zalo, xem ảnh ở cột Link ảnh trong Sheet.' });\nconst max = 1900;\nlet cur = '';\nfor (const para of r.row['Nội dung'].split(/\\n{2,}/)) {\n  const joined = cur ? cur + '\\n\\n' + para : para;\n  if (joined.length <= max) { cur = joined; continue; }\n  if (cur) msgs.push({ text: cur });\n  cur = para.length <= max ? para : '';\n  if (para.length > max) for (let i = 0; i < para.length; i += max) msgs.push({ text: para.slice(i, i + max) });\n}\nif (cur) msgs.push({ text: cur });\nmsgs.push({ text: `👉 \"/duyet ${id}\" để đăng lúc 19:30, hoặc hẹn giờ: \"/duyet ${id} 20:15\" | \"/bo ${id}\" để bỏ\\n✏️ \"/sua ${id} <yêu cầu>\" để AI sửa chữ | 📝 \"/dungbai ${id}\" + xuống dòng dán bài tự viết (cùng 1 tin) để thay toàn bộ chữ\\n🖼️ \"/anh ${id}\" để AI vẽ lại ảnh (có thể kèm yêu cầu) | \"/anh ${id} ngang\" vẽ ảnh ngang 16:9 (đứng đầu album, dùng luôn làm ảnh bìa OA)\n📎 Dùng ảnh tự thiết kế: gửi ảnh hoặc file ảnh vào nhóm rồi gõ \"/dunganh ${id}\" (ảnh vuông = ảnh bài, ảnh ngang = ảnh bìa Zalo OA)\\n➕ \"/themanh ${id}\" thêm các ảnh vừa gửi (1 bài nhiều ảnh) | ➖ \"/xoaanh ${id} <số ảnh>\"\n🖌️ \"/anhbia ${id}\" để tạo ảnh bìa Zalo OA (cần có trước khi /duyet)\\n↩️ \"/hoantac ${id}\" quay lại bản ngay trước | \"/hoantac ${id} chu|anh|bia <số bản>\" về đúng bản đó\n🗂️ \"/lichsu ${id}\" xem các bản chữ + ảnh, \"/lichsu ${id} bia\" xem ảnh bìa | 👀 \"/xem ${id} chu|anh|bia <số bản>\" xem 1 bản\n⏰ \"/hengio ${id} <giờ>\" đổi giờ đăng | 📋 \"/choduyet\" xem các bài đang chờ` });\nreturn msgs.map(message => ({ json: { message } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5008,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000033",
+      "name": "Soạn tin Zalo"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: '<ZALO_GROUP_ID>' }, message: $json.message }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5232,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000034",
+      "name": "Zalo: gửi vào nhóm"
+    },
+    {
+      "parameters": {
+        "operation": "multiStep",
+        "operations": {
+          "operations": [
+            {
+              "operation": "resize",
+              "width": 1080,
+              "height": 1080,
+              "resizeOption": "ignoreAspectRatio"
+            },
+            {
+              "operation": "composite",
+              "dataPropertyNameComposite": "header",
+              "positionX": 54,
+              "positionY": 54
+            },
+            {
+              "operation": "composite",
+              "dataPropertyNameComposite": "footer",
+              "positionY": 972
+            }
+          ]
+        },
+        "options": {
+          "fileName": "post.jpg",
+          "format": "jpeg",
+          "quality": 90
+        }
+      },
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        3152,
+        0
+      ],
+      "id": "e0000000-0000-4000-8000-000000000040",
+      "name": "Ghép logo và footer"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  contents: [{ parts: [\n    { inlineData: ((($json.candidates || [])[0]?.content?.parts || []).find(p => p.inlineData) || {}).inlineData },\n    { text: 'You are a strict design QA reviewer. Look at this square social-media cover image. Set ok to true ONLY if ALL of these hold: (1) the background continues seamlessly to every edge: there is NO separate rectangle, box, panel, card-shaped empty area, thin frame line, border or horizontal band drawn in the top-left area, along the top edge or along the bottom edge; (2) the top-left area (left 30%, top 18%) contains no text and no important object; (3) every Vietnamese text is spelled exactly right with correct diacritics; the expected title is: \"' + (() => { try { return $('Chuẩn bị ảnh').first().json.title; } catch (e) { return $('Đọc kết quả viết bài').first().json.shorten; } })() + '\". In loi, describe each problem briefly in Vietnamese, or an empty string when ok.' }\n  ] }],\n  generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' }, loi: { type: 'STRING' } }, required: ['ok', 'loi'] } }\n}) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2608,
+        32
+      ],
+      "id": "e0000000-0000-4000-8000-000000000090",
+      "name": "Kiểm tra ảnh",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c91",
+              "leftValue": "={{ (() => { try { return JSON.parse(($json.candidates[0].content.parts || []).map(p => p.text || '').join('')).ok !== false; } catch (e) { return true; } })() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2832,
+        32
+      ],
+      "id": "e0000000-0000-4000-8000-000000000091",
+      "name": "Ảnh ổn?"
+    },
+    {
+      "parameters": {
+        "content": "## 1. Hẹn giờ / lệnh Zalo & lấy tiêu đề\n**8h sáng**: lấy tiêu đề đầu tiên (từ trên xuống) chưa viết trong Sheet. **/tieude <tiêu đề>** (bot GMF gọi sang): ghi tiêu đề vào ô vàng và viết ngay. **/dstieude**: liệt kê hàng chờ. Hết tiêu đề → nhắn nhóm, không gọi AI.",
+        "height": 820,
+        "width": 1390,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -96,
+        -240
+      ],
+      "id": "d777a9b7-0e23-4902-8117-2f9f36453af1",
+      "name": "📌 1"
+    },
+    {
+      "parameters": {
+        "content": "## 2. AI viết bài\nGemini **model rẻ** viết trước; lỗi/quá tải thì chuyển **model dự phòng**. Tự xuống dòng, thêm emoji, gắn footer GOSTECH.",
+        "height": 740,
+        "width": 906,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        -160
+      ],
+      "id": "f1bd9405-459f-4864-a602-23c9b33dc7fa",
+      "name": "📌 2"
+    },
+    {
+      "parameters": {
+        "content": "## 3. Tạo & kiểm tra ảnh\nModel ảnh **rẻ** tạo ảnh theo 1 trong 6 bố cục. AI **tự kiểm tra** ảnh (khung thừa, sai chính tả); lỗi thì tạo lại bằng **model Pro**. Cuối cùng ghép logo GOS Academy + thanh hotline.",
+        "height": 740,
+        "width": 1060,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        -160
+      ],
+      "id": "92b71237-3599-4b1c-ac75-e3f711d7ad92",
+      "name": "📌 3"
+    },
+    {
+      "parameters": {
+        "content": "## 4. Lưu & gửi duyệt qua Zalo\nTải ảnh lên Trang ở dạng ẩn để lấy link, ghi bài vào Sheet (**Chờ duyệt**), gửi ảnh + bài + hướng dẫn lệnh vào nhóm Zalo OA.",
+        "height": 740,
+        "width": 2050,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3408,
+        -160
+      ],
+      "id": "938084ef-ec13-490f-ac37-1894ba6f11c0",
+      "name": "📌 4"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 3 chế độ: lịch 8h (lấy tiêu đề đầu tiên chưa viết), /tieude <tiêu đề> (viết ngay), /dstieude (liệt kê hàng chờ)\nconst rows = $input.all().map(i => i.json);\nlet call = null;\ntry { call = $('Khi được gọi').first().json; } catch (e) {}\nconst nextId = rows.reduce((m, r) => Math.max(m, Number(r['ID']) || 0), 0) + 1;\nconst chuaViet = (r) => !String(r['Nội dung'] || '').trim() && ['', 'chờ viết'].includes(String(r['Trạng thái'] || '').trim().toLowerCase());\nconst pending = rows.filter(r => String(r['Tiêu đề'] || '').trim() && chuaViet(r));\nconst oVangTrong = rows.filter(r => !String(r['Tiêu đề'] || '').trim() && chuaViet(r) && String(r['Trạng thái'] || '').trim() === 'Chờ viết');\n\nif (call && call.route === 'dstieude') {\n  const list = pending.slice(0, 20).map((r, i) => `${i + 1}. ${String(r['Tiêu đề']).trim()}`).join('\\n');\n  const oTxt = `🟨 Còn ${oVangTrong.length} ô vàng trống trên Sheet để gõ thêm tiêu đề.`;\n  const reply = pending.length\n    ? `📋 ${pending.length} TIÊU ĐỀ ĐANG CHỜ VIẾT (8h sáng bot viết dòng trên cùng):\\n${list}${pending.length > 20 ? '\\n…' : ''}\\n\\n${oTxt}\\n✍️ Muốn viết ngay: gõ \"/tieude <tiêu đề>\"`\n    : `📋 Chưa có tiêu đề nào chờ viết (các ô vàng trên Sheet đều đang trống).\\n${oTxt}\\n✍️ Gõ \"/tieude <tiêu đề>\" để bot viết ngay, hoặc gõ tiêu đề vào ô vàng để 8h sáng bot viết.`;\n  return [{ json: { found: false, mode: 'ds', reply } }];\n}\nif (call && call.route === 'tieude') {\n  const tieuDe = String(call.title || '').replace(/\\s+/g, ' ').trim();\n  if (tieuDe.length < 5) return [{ json: { found: false, mode: 'tieude', reply: 'ℹ️ Cách dùng: /tieude <tiêu đề bài>\\nVí dụ: /tieude 5 phím tắt Google Sheets giúp bạn làm việc nhanh gấp đôi' } }];\n  // Ghi vào ô vàng trống đầu tiên (Trạng thái \"Chờ viết\", chưa có tiêu đề); hết ô vàng thì ghi xuống dòng mới\n  const maxRow = rows.reduce((m, r) => Math.max(m, Number(r.row_number) || 1), 1);\n  return [{ json: { found: true, mode: 'tieude', tieuDe, row_number: oVangTrong.length ? oVangTrong[0].row_number : maxRow + 1, id: nextId, conLai: pending.length } }];\n}\nif (!pending.length) return [{ json: { found: false, mode: 'lich', conLai: 0 } }];\nconst r = pending[0];\nreturn [{ json: { found: true, mode: 'lich', tieuDe: String(r['Tiêu đề']).trim(), row_number: r.row_number,\n  id: Number(r['ID']) || nextId, conLai: pending.length - 1 } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        208
+      ],
+      "id": "c1000000-0000-4000-8000-000000000001",
+      "name": "Chọn tiêu đề"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "td1",
+              "leftValue": "={{ $json.found }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        672,
+        208
+      ],
+      "id": "c1000000-0000-4000-8000-000000000002",
+      "name": "Có tiêu đề?"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "oa_id",
+              "keyValue": "<ZALO_OA_ID>"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        400
+      ],
+      "id": "c1000000-0000-4000-8000-000000000003",
+      "name": "Lấy token (hết tiêu đề)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token (hết tiêu đề)').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: '<ZALO_GROUP_ID>' }, message: { text: $('Chọn tiêu đề').first().json.reply || \"ℹ️ Hôm nay chưa có tiêu đề nào để viết bài. Chị gõ tiêu đề vào các ô màu vàng ở cột \\\"Tiêu đề\\\" (dòng có Trạng thái \\\"Chờ viết\\\") trong Sheet lịch đăng, hoặc gõ \\\"/tieude <tiêu đề>\\\" trong nhóm để bot viết ngay ạ.\" } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1104,
+        400
+      ],
+      "id": "c1000000-0000-4000-8000-000000000004",
+      "name": "Báo hết tiêu đề"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c1000000-0000-4000-8000-000000000010",
+      "name": "Khi được gọi"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "td2",
+              "leftValue": "={{ $('Chọn tiêu đề').first().json.mode }}",
+              "rightValue": "tieude",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        48
+      ],
+      "id": "c1000000-0000-4000-8000-000000000011",
+      "name": "Từ lệnh /tieude?"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "oa_id",
+              "keyValue": "<ZALO_OA_ID>"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        -128
+      ],
+      "id": "c1000000-0000-4000-8000-000000000012",
+      "name": "Lấy token (báo nhận)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token (báo nhận)').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: '<ZALO_GROUP_ID>' }, message: { text: '⏳ Đã nhận tiêu đề: \"' + $('Chọn tiêu đề').first().json.tieuDe + '\". ' + ((() => { try { return $('Khi được gọi').first().json.url; } catch (e) { return ''; } })() ? 'Bot đang viết bài và dùng ảnh bạn gửi' : 'Bot đang viết bài (chỉ viết chữ, không vẽ ảnh)') + ', khoảng 1 phút sẽ gửi vào nhóm để duyệt.' } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1104,
+        -128
+      ],
+      "id": "c1000000-0000-4000-8000-000000000013",
+      "name": "Báo đang viết"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Giữ trong Sheet luôn có 10 ô vàng trống (\"Chờ viết\", chưa có tiêu đề) để người phụ trách gõ tiêu đề\nconst MUC_TIEU = 10;\nconst rows = $('Đọc lịch đăng').all().map(i => i.json);\nconst daDung = Number($('Chọn tiêu đề').first().json.row_number);\nconst trong = rows.filter(r => !String(r['Tiêu đề'] || '').trim() && !String(r['Nội dung'] || '').trim()\n  && String(r['Trạng thái'] || '').trim() === 'Chờ viết' && Number(r.row_number) !== daDung).length;\nconst them = Math.max(0, MUC_TIEU - trong);\nreturn Array.from({ length: them }, () => ({ json: { 'Trạng thái': 'Chờ viết' } }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4160,
+        432
+      ],
+      "id": "c1000000-0000-4000-8000-000000000020",
+      "name": "Bù ô vàng"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Trạng thái": "={{ $json['Trạng thái'] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Trạng thái",
+              "displayName": "Trạng thái",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        4368,
+        432
+      ],
+      "id": "c1000000-0000-4000-8000-000000000021",
+      "name": "Thêm ô vàng",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0001",
+              "leftValue": "={{ $('Chọn tiêu đề').first().json.mode !== 'tieude' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2078,
+        468
+      ],
+      "id": "dd000000-0000-4000-8000-000000000001",
+      "name": "Vẽ ảnh AI?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0002",
+              "leftValue": "={{ !!(() => { try { return $('Khi được gọi').first().json.url || ''; } catch (e) { return ''; } })() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2298,
+        468
+      ],
+      "id": "dd000000-0000-4000-8000-000000000002",
+      "name": "Có ảnh gửi kèm?"
+    },
+    {
+      "parameters": {
+        "url": "={{ (() => { try { return $('Khi được gọi').first().json.url || ''; } catch (e) { return ''; } })() }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2518,
+        408
+      ],
+      "id": "dd000000-0000-4000-8000-000000000003",
+      "name": "Tải ảnh gửi kèm"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ảnh tự thiết kế gửi kèm /tieude: dùng nguyên ảnh, không ghép logo/hotline\nreturn [{ json: { imageModel: 'ảnh tự gửi kèm /tieude' }, binary: { data: $input.first().binary.data } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2738,
+        408
+      ],
+      "id": "dd000000-0000-4000-8000-000000000004",
+      "name": "Ảnh gửi kèm"
+    },
+    {
+      "parameters": {
+        "jsCode": "// /tieude không kèm ảnh: bài chưa có ảnh, quản lý tự gửi ảnh (/dunganh) hoặc gõ /anh để AI vẽ\nreturn [{ json: { images: [] } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2518,
+        608
+      ],
+      "id": "dd000000-0000-4000-8000-000000000005",
+      "name": "Chưa có ảnh"
+    }
+  ],
+  "connections": {
+    "Mỗi ngày 8h": {
+      "main": [
+        [
+          {
+            "node": "Đọc lịch đăng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc lịch đăng": {
+      "main": [
+        [
+          {
+            "node": "Chọn tiêu đề",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chuẩn bị viết bài": {
+      "main": [
+        [
+          {
+            "node": "Viết bài (model rẻ)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Viết bài (model rẻ)": {
+      "main": [
+        [
+          {
+            "node": "Đọc kết quả viết bài",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Viết bài (dự phòng)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Viết bài (dự phòng)": {
+      "main": [
+        [
+          {
+            "node": "Đọc kết quả viết bài",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc kết quả viết bài": {
+      "main": [
+        [
+          {
+            "node": "Vẽ ảnh AI?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tạo ảnh (model rẻ)": {
+      "main": [
+        [
+          {
+            "node": "Có ảnh chưa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có ảnh chưa?": {
+      "main": [
+        [
+          {
+            "node": "Kiểm tra ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tạo ảnh (dự phòng)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tạo ảnh (dự phòng)": {
+      "main": [
+        [
+          {
+            "node": "Lấy file ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy file ảnh": {
+      "main": [
+        [
+          {
+            "node": "Ghép logo và footer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh lên Trang (ẩn)": {
+      "main": [
+        [
+          {
+            "node": "Lấy link ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy link ảnh": {
+      "main": [
+        [
+          {
+            "node": "Tạo dòng Chờ duyệt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tạo dòng Chờ duyệt": {
+      "main": [
+        [
+          {
+            "node": "Ghi vào lịch đăng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghi vào lịch đăng": {
+      "main": [
+        [
+          {
+            "node": "Lấy token Zalo",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Bù ô vàng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy token Zalo": {
+      "main": [
+        [
+          {
+            "node": "Ảnh cho Zalo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ảnh cho Zalo": {
+      "main": [
+        [
+          {
+            "node": "Zalo: tải ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zalo: tải ảnh": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin Zalo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin Zalo": {
+      "main": [
+        [
+          {
+            "node": "Zalo: gửi vào nhóm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghép logo và footer": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh lên Trang (ẩn)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kiểm tra ảnh": {
+      "main": [
+        [
+          {
+            "node": "Ảnh ổn?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ảnh ổn?": {
+      "main": [
+        [
+          {
+            "node": "Lấy file ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tạo ảnh (dự phòng)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chọn tiêu đề": {
+      "main": [
+        [
+          {
+            "node": "Có tiêu đề?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có tiêu đề?": {
+      "main": [
+        [
+          {
+            "node": "Từ lệnh /tieude?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lấy token (hết tiêu đề)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy token (hết tiêu đề)": {
+      "main": [
+        [
+          {
+            "node": "Báo hết tiêu đề",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Khi được gọi": {
+      "main": [
+        [
+          {
+            "node": "Đọc lịch đăng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Từ lệnh /tieude?": {
+      "main": [
+        [
+          {
+            "node": "Lấy token (báo nhận)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chuẩn bị viết bài",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy token (báo nhận)": {
+      "main": [
+        [
+          {
+            "node": "Báo đang viết",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Báo đang viết": {
+      "main": [
+        [
+          {
+            "node": "Chuẩn bị viết bài",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bù ô vàng": {
+      "main": [
+        [
+          {
+            "node": "Thêm ô vàng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vẽ ảnh AI?": {
+      "main": [
+        [
+          {
+            "node": "Tạo ảnh (model rẻ)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Có ảnh gửi kèm?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có ảnh gửi kèm?": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh gửi kèm",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chưa có ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh gửi kèm": {
+      "main": [
+        [
+          {
+            "node": "Ảnh gửi kèm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ảnh gửi kèm": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh lên Trang (ẩn)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chưa có ảnh": {
+      "main": [
+        [
+          {
+            "node": "Tạo dòng Chờ duyệt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "tags": []
+}

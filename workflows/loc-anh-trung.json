@@ -1,0 +1,152 @@
+{
+  "name": "Lọc ảnh trùng",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c0000000-0000-4000-8000-000000000901",
+      "name": "Khi được gọi"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mỗi ảnh 1 item (nhóm cu/moi, vị trí); bỏ hậu tố #fb #zalo #tay #src=\nconst p = $('Khi được gọi').first().json;\nconst sach = (u) => String(u || '').trim().replace(/#(fb|zalo|tay|src=[a-z0-9]+)$/i, '');\nconst out = [];\n(p.cu || []).forEach((u, i) => { if (sach(u)) out.push({ json: { nhom: 'cu', vt: i, url: sach(u) } }); });\n(p.moi || []).forEach((u, i) => { if (sach(u)) out.push({ json: { nhom: 'moi', vt: i, url: sach(u) } }); });\nreturn out.length ? out : [{ json: { nhom: 'rong', vt: 0, url: '' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "c0000000-0000-4000-8000-000000000902",
+      "name": "Danh sách ảnh"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "c0000000-0000-4000-8000-000000000903",
+      "name": "Tải ảnh",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "resize",
+        "width": 17,
+        "height": 16,
+        "resizeOption": "ignoreAspectRatio",
+        "options": {
+          "format": "bmp"
+        }
+      },
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ],
+      "id": "c0000000-0000-4000-8000-000000000904",
+      "name": "Thu nhỏ 17x16",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Đọc BMP 17x16 -> độ sáng -> dHash 256 bit; ảnh mới trùng ảnh cũ / ảnh mới trước đó nếu khác <= 20 bit và cùng tỉ lệ\nconst ds = $('Danh sách ảnh').all().map(i => i.json);\nconst it = $input.all();\nfunction xam(b) {\n  if (b.toString('ascii', 0, 2) !== 'BM') return null;\n  const off = b.readUInt32LE(10), w = b.readInt32LE(18), hRaw = b.readInt32LE(22), bpp = b.readUInt16LE(28);\n  const h = Math.abs(hRaw), Bp = bpp / 8, row = Math.ceil(w * Bp / 4) * 4;\n  if (w !== 17 || h !== 16 || Bp < 3) return null;\n  const g = [];\n  for (let y = 0; y < h; y++) { const ry = hRaw > 0 ? h - 1 - y : y;\n    for (let x = 0; x < w; x++) { const o = off + ry * row + x * Bp; g.push(0.114 * b[o] + 0.587 * b[o + 1] + 0.299 * b[o + 2]); } }\n  return g;\n}\nconst H = [];\nfor (let i = 0; i < it.length; i++) {\n  let g = null; try { g = xam(await this.helpers.getBinaryDataBuffer(i, 'data')); } catch (e) {}\n  H.push(g ? Array.from({ length: 256 }, (_, k) => { const y = Math.floor(k / 16), x = k % 16; return g[y * 17 + x] > g[y * 17 + x + 1] ? 1 : 0; }) : null);\n}\nconst kc = (a, b) => a.reduce((s, v, k) => s + (v !== b[k] ? 1 : 0), 0);\nconst trung = []; let loi = 0;\nds.forEach((d, i) => {\n  if (d.nhom !== 'moi') return;\n  if (!H[i]) { loi++; return; }\n  for (let j = 0; j < i; j++) {\n    if (!H[j] || ds[j].nhom === 'rong') continue;\n    if (ds[j].nhom === 'moi' && trung.some(t => t.moi === ds[j].vt)) continue;\n    const d2 = kc(H[i], H[j]);\n    if (d2 <= 20) { trung.push({ moi: d.vt, nhom: ds[j].nhom, vt: ds[j].vt, kc: d2 }); break; }\n  }\n});\nreturn [{ json: { trung, loi, soAnh: ds.length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "c0000000-0000-4000-8000-000000000905",
+      "name": "So sánh"
+    },
+    {
+      "parameters": {
+        "content": "## Lọc ảnh trùng\nVào: `cu` (ảnh đang có trong bài) + `moi` (ảnh vừa gửi).\nSo NỘI DUNG ảnh (Zalo nén lại nên link khác nhau dù cùng ảnh): thu nhỏ 17×16, so độ sáng từng điểm với điểm bên phải → 256 bit; khác ≤ 20 bit = trùng.\nRa: `trung` = [{moi: vị trí ảnh mới, nhom: cu|moi, vt: trùng với ảnh nào}].\nDùng bởi: Thêm ảnh, Dùng ảnh tự thiết kế, Đặt bộ ảnh.",
+        "height": 220,
+        "width": 520
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        200,
+        160
+      ],
+      "id": "c0000000-0000-4000-8000-000000000906",
+      "name": "Ghi chú"
+    }
+  ],
+  "connections": {
+    "Khi được gọi": {
+      "main": [
+        [
+          {
+            "node": "Danh sách ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Danh sách ảnh": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh": {
+      "main": [
+        [
+          {
+            "node": "Thu nhỏ 17x16",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Thu nhỏ 17x16": {
+      "main": [
+        [
+          {
+            "node": "So sánh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "tags": []
+}

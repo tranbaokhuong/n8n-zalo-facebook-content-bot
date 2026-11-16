@@ -1,0 +1,328 @@
+{
+  "name": "Duyệt bài từ Zalo",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000001",
+      "name": "Khi được gọi"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "oa_id",
+              "keyValue": "={{ $('Khi được gọi').first().json.oa_id }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000002",
+      "name": "Lấy token Zalo",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        448,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000003",
+      "name": "Đọc lịch đăng",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Kiểm tra lệnh và trạng thái bài trong lịch đăng\nconst cmd = $('Khi được gọi').first().json;\n// /choduyet: danh sách bài Chờ duyệt (còn thiếu gì) + bài đã duyệt chờ đăng\nif (cmd.action === 'list') {\n  const all = $('Đọc lịch đăng').all().map(i => i.json);\n  const h = (s) => { let x = 5381; for (const ch of String(s || '')) x = ((x * 33) ^ ch.charCodeAt(0)) >>> 0; return x.toString(36); };\n  const ten = (r) => { const t = String(r['Tiêu đề'] || '').trim() || String(r['Nội dung'] || '').split('\\n')[0]; return t.length > 55 ? t.slice(0, 55) + '…' : t; };\n  const tinhTrang = (r) => {\n    const anh = String(r['Link ảnh'] || '').trim(), bia = String(r['Ảnh bìa OA'] || '').trim();\n    const src = (bia.match(/#src=([a-z0-9]+)/) || [])[1];\n    const thieu = [];\n    if (!anh) thieu.push('❌ chưa ảnh bài');\n    if (!bia) thieu.push('❌ chưa ảnh bìa');\n    else if (src && anh && src !== h(anh)) thieu.push('⚠️ ảnh bìa lệch ảnh bài');\n    return thieu.length ? thieu.join(', ') : '✅ đủ ảnh → /duyet ' + r['ID'];\n  };\n  const cho = all.filter(r => String(r['Trạng thái'] || '').trim() === 'Chờ duyệt');\n  const dang = all.filter(r => String(r['Trạng thái'] || '').trim() === 'Chờ đăng');\n  const L = [];\n  L.push(cho.length ? `📋 BÀI CHỜ DUYỆT (${cho.length}):` : '📋 Không có bài nào đang chờ duyệt.');\n  cho.slice(-15).forEach(r => L.push(`#${r['ID']} ${ten(r)}\\n   ${tinhTrang(r)}`));\n  if (cho.length > 15) L.push(`(… còn ${cho.length - 15} bài cũ hơn)`);\n  L.push('');\n  L.push(dang.length ? `📅 ĐÃ DUYỆT, CHỜ ĐĂNG (${dang.length}) – mỗi tối 19:30 đăng 1 bài theo thứ tự:` : '📅 Chưa có bài nào đã duyệt chờ đăng.');\n  dang.slice(0, 10).forEach((r, i) => L.push(`#${r['ID']} ${ten(r)}${r['Thời gian đăng'] ? ' – hẹn ' + r['Thời gian đăng'] : i === 0 ? ' – đăng lượt tới' : ''}`));\n  L.push('');\n  const ck = all.filter(r => String(r['Trạng thái'] || '').trim() === 'Chờ công khai');\n  if (ck.length) { L.push(`👀 ĐÃ XEM TRƯỚC, HẸN CÔNG KHAI (${ck.length}):`); ck.slice(0, 10).forEach(r => L.push(`#${r['ID']} ${ten(r)} – ${r['Thời gian đăng'] || ''}`)); L.push(''); }\n  L.push('👀 Xem bài: /xem <số> chu <số bản> | 🖼️ /xemanh <số> | 🔍 /xemtruoc <số> | 🗂️ /lichsu <số> | 🗑️ /bo <số>');\n  return [{ json: { ok: false, reply: L.join('\\n').slice(0, 1990) } }];\n}\n// ----- Hẹn giờ đăng: \"20:15\", \"20h\", \"20h15\", \"9:00 13/11\", \"8h mai\"; \"huy\" = bỏ hẹn giờ -----\nconst ZONE = 'Asia/Ho_Chi_Minh';\nfunction docGio(s) {\n  s = String(s || '').toLowerCase().trim();\n  if (!s) return null;\n  if (/^(huy|hủy|xoa|xóa|bo|bỏ)$/.test(s)) return '';\n  const m = s.match(/(\\d{1,2})\\s*(?:h|giờ|g|:)\\s*(\\d{1,2})?/);\n  if (!m) return 'loi';\n  const H = +m[1], M = +(m[2] || 0);\n  if (H > 23 || M > 59) return 'loi';\n  const now = DateTime.now().setZone(ZONE);\n  const dm = s.match(/(\\d{1,2})\\s*[\\/\\-.]\\s*(\\d{1,2})(?:\\s*[\\/\\-.]\\s*(\\d{2,4}))?/);\n  let d = now;\n  if (dm) {\n    const y = dm[3] ? (dm[3].length === 2 ? 2000 + +dm[3] : +dm[3]) : now.year;\n    d = DateTime.fromObject({ year: y, month: +dm[2], day: +dm[1] }, { zone: ZONE });\n    if (!d.isValid) return 'loi';\n  } else if (/mai/.test(s)) d = now.plus({ days: 1 });\n  let t = d.set({ hour: H, minute: M, second: 0, millisecond: 0 });\n  if (!dm && !/mai/.test(s) && t <= now.plus({ minutes: 1 })) t = t.plus({ days: 1 });\n  if (t <= now) return 'qua';\n  return t.toFormat('d/M/yyyy H:mm');\n}\nconst GIO_HD = 'Ví dụ: \"20:15\" (hôm nay, qua rồi thì mai), \"20h\", \"9h30 mai\", \"8:00 15/11\". Gõ \"huy\" để bỏ hẹn giờ (đăng lúc 19:30).';\nconst id = Number(cmd.id);\nconst rows = $('Đọc lịch đăng').all().map(i => i.json);\nconst row = rows.find(r => Number(r['ID']) === id);\nconst now = DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm');\nconst duyet = cmd.action === 'duyet';\nif (!row) return [{ json: { ok: false, reply: `❌ Không tìm thấy bài #${cmd.id} trong lịch đăng.` } }];\nconst st = String(row['Trạng thái'] || '').trim();\nif (cmd.action === 'hengio') {\n  if (!['Chờ duyệt', 'Chờ đăng'].includes(st)) return [{ json: { ok: false, reply: `ℹ️ Bài #${id} đang \"${st || 'trống'}\" nên không hẹn giờ được.` } }];\n  const g = docGio(cmd.gio);\n  if (g === null || g === 'loi') return [{ json: { ok: false, reply: `ℹ️ Chưa hiểu giờ đăng \"${cmd.gio || ''}\".\\n⏰ Gõ: /hengio ${id} <giờ> [ngày]\\n${GIO_HD}` } }];\n  if (g === 'qua') return [{ json: { ok: false, reply: `ℹ️ Giờ \"${cmd.gio}\" đã qua rồi, chọn giờ khác.` } }];\n  const now2 = DateTime.now().setZone(ZONE).toFormat('dd/MM/yyyy HH:mm');\n  return [{ json: { ok: true, update: { 'ID': String(id), 'Trạng thái': st, 'Thời gian đăng': g, 'Ghi chú': `${row['Ghi chú'] || ''} | Hẹn giờ qua Zalo ${now2}: ${g || 'bỏ hẹn giờ'}`.replace(/^ \\| /, '') },\n    reply: g ? `⏰ Bài #${id} sẽ đăng lúc ${g}${st === 'Chờ duyệt' ? '\\n(Bài vẫn Chờ duyệt: nhớ /duyet ' + id + ' trước giờ đó, chưa duyệt thì không đăng)' : ''}.` : `⏰ Đã bỏ hẹn giờ bài #${id}, bài sẽ đăng theo lượt lúc 19:30.` } }];\n}\nif (st !== 'Chờ duyệt' && !(!duyet && ['Chờ đăng', 'Chờ công khai'].includes(st))) return [{ json: { ok: false, reply: `ℹ️ Bài #${id} đang ở trạng thái \"${st || 'trống'}\", không phải \"Chờ duyệt\" nên không đổi gì.` } }];\n// /duyet là bước chốt cuối: phải có ảnh bìa Zalo OA và ảnh bìa phải làm từ đúng ảnh vuông hiện tại\nif (duyet) {\n  const h = (s) => { let h = 5381; for (const ch of String(s || '')) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0; return h.toString(36); };\n  if (!String(row['Link ảnh'] || '').trim()) return [{ json: { ok: false, reply: `⚠️ Bài #${id} chưa có ảnh bài nên chưa duyệt.\\n📎 Gửi ảnh vuông vào nhóm, ghi chú: /dunganh ${id}  (hoặc gõ /anh ${id} để AI vẽ)` } }];\n  const bia = String(row['Ảnh bìa OA'] || '').trim();\n  if (!bia) return [{ json: { ok: false, reply: `⚠️ Bài #${id} chưa có ảnh bìa Zalo OA nên chưa duyệt.\\n🖌️ Gõ /anhbia ${id} để tạo ảnh bìa, xem ưng rồi /duyet ${id} lại.` } }];\n  const src = (bia.match(/#src=([a-z0-9]+)/) || [])[1];\n  if (src && src !== h(row['Link ảnh'])) return [{ json: { ok: false, reply: `⚠️ Ảnh bài #${id} đã đổi sau khi tạo ảnh bìa nên ảnh bìa không còn khớp, chưa duyệt.\\n🖌️ Gõ /anhbia ${id} để tạo lại (hoặc /hoantac ${id} bia về ảnh bìa đúng), rồi /duyet ${id}.` } }];\n}\nlet gioMoi = null;\nif (duyet && cmd.gio) {\n  gioMoi = docGio(cmd.gio);\n  if (gioMoi === 'loi') return [{ json: { ok: false, reply: `ℹ️ Chưa hiểu giờ đăng \"${cmd.gio}\" nên chưa duyệt.\\n${GIO_HD}` } }];\n  if (gioMoi === 'qua') return [{ json: { ok: false, reply: `ℹ️ Giờ \"${cmd.gio}\" đã qua rồi nên chưa duyệt, chọn giờ khác.` } }];\n}\nconst gioDang = gioMoi !== null ? gioMoi : String(row['Thời gian đăng'] || '').trim();\nconst note = `${row['Ghi chú'] || ''} | ${duyet ? 'Duyệt' : 'Bỏ'} qua Zalo ${now}`.replace(/^ \\| /, '');\nreturn [{ json: {\n  ok: true,\n  update: { 'ID': String(id), 'Trạng thái': duyet ? 'Chờ đăng' : 'Đã bỏ', 'Thời gian đăng': duyet ? gioDang : String(row['Thời gian đăng'] || ''), 'Ghi chú': note },\n  reply: duyet\n    ? `✅ Đã duyệt bài #${id}. Bài chuyển sang \"Chờ đăng\"${gioDang ? ', sẽ đăng lúc ' + gioDang : ' và sẽ tự đăng lúc 19:30 (mỗi ngày đăng 1 bài theo thứ tự duyệt)'}.\\n⏰ Đổi giờ: /hengio ${id} <giờ>.`\n    : `🗑️ Đã bỏ bài #${id}. Bài sẽ không được đăng${st === 'Chờ đăng' ? ' (đã gỡ khỏi lịch đăng)' : ''}.`\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000004",
+      "name": "Xử lý lệnh"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ok1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000005",
+      "name": "Hợp lệ?"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $json.update['ID'] }}",
+            "Trạng thái": "={{ $json.update['Trạng thái'] }}",
+            "Ghi chú": "={{ $json.update['Ghi chú'] }}",
+            "Thời gian đăng": "={{ $json.update['Thời gian đăng'] }}"
+          },
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Trạng thái",
+              "displayName": "Trạng thái",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ghi chú",
+              "displayName": "Ghi chú",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Thời gian đăng",
+              "displayName": "Thời gian đăng",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        1104,
+        112
+      ],
+      "id": "e0000000-0000-4000-8000-000000000006",
+      "name": "Cập nhật trạng thái",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Khi được gọi').first().json.group_id }, message: { text: $('Xử lý lệnh').first().json.reply } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000007",
+      "name": "Trả lời nhóm",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "content": "## Nhận lệnh, kiểm tra & cập nhật\nChỉ đổi bài đang **Chờ duyệt**: duyệt → **Chờ đăng**, bỏ → **Đã bỏ**. Ghi lại thời điểm vào cột Ghi chú và trả lời trong nhóm.\n**/duyet** là bước chốt cuối: chỉ duyệt khi bài đã có ảnh bìa Zalo OA (tạo bằng /anhbia) làm từ đúng ảnh hiện tại.",
+        "height": 494,
+        "width": 1610,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        -96
+      ],
+      "id": "9e3c2bc9-bc98-40fc-aa93-23f98c843735",
+      "name": "📌 1"
+    }
+  ],
+  "connections": {
+    "Khi được gọi": {
+      "main": [
+        [
+          {
+            "node": "Lấy token Zalo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy token Zalo": {
+      "main": [
+        [
+          {
+            "node": "Đọc lịch đăng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc lịch đăng": {
+      "main": [
+        [
+          {
+            "node": "Xử lý lệnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Xử lý lệnh": {
+      "main": [
+        [
+          {
+            "node": "Hợp lệ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hợp lệ?": {
+      "main": [
+        [
+          {
+            "node": "Cập nhật trạng thái",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trả lời nhóm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cập nhật trạng thái": {
+      "main": [
+        [
+          {
+            "node": "Trả lời nhóm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "tags": []
+}

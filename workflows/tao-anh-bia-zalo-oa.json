@@ -1,0 +1,1283 @@
+{
+  "name": "Tạo ảnh bìa Zalo OA",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000001",
+      "name": "Khi được gọi"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "oa_id",
+              "keyValue": "={{ $('Khi được gọi').first().json.oa_id }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000002",
+      "name": "Lấy token Zalo",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        440,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000003",
+      "name": "Đọc lịch đăng",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tìm bài, kiểm tra trạng thái; nguon = 'duyet' (tự tạo khi duyệt) hoặc 'anhbia' (lệnh /anhbia)\nconst cmd = $('Khi được gọi').first().json;\nconst rows = $('Đọc lịch đăng').all().map(i => i.json);\nconst row = rows.find(r => String(r['ID']) === String(cmd.id));\nif (!row) return [{ json: { ok: false, reply: `❌ Không tìm thấy bài #${cmd.id} trong lịch đăng.` } }];\nconst st = String(row['Trạng thái'] || '').trim();\nif (!['Chờ duyệt', 'Chờ đăng'].includes(st))\n  return [{ json: { ok: false, reply: `ℹ️ Bài #${row.ID} đang ở trạng thái \"${st || 'trống'}\" nên không tạo ảnh bìa (chỉ làm cho bài Chờ duyệt / Chờ đăng).` } }];\nif (!row['Link ảnh']) return [{ json: { ok: false, reply: `❌ Bài #${row.ID} chưa có ảnh bài nên AI chưa làm được ảnh bìa.\\n📎 Gửi ảnh vuông kèm /dunganh ${row.ID} (hoặc /anh ${row.ID}) trước, hoặc gửi luôn ảnh NGANG tự thiết kế kèm /dunganh ${row.ID} làm ảnh bìa.` } }];\nconst yc = String(cmd.request || '').trim();\nreturn [{ json: { ok: true, id: String(row.ID), linkAnh: row['Link ảnh'], yc, oldBia: String(row['Ảnh bìa OA'] || '').trim(), nguon: cmd.nguon || 'duyet',\n  ack: cmd.nguon === 'anhbia' ? `⏳ Đang tạo ảnh bìa Zalo OA cho bài #${row.ID}${yc ? ' theo yêu cầu: ' + yc : ''}… (khoảng 1 phút)` : '' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000004",
+      "name": "Chuẩn bị"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d6000000-0000-4000-8000-000000000005-c",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000005",
+      "name": "Hợp lệ?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Khi được gọi').first().json.group_id }, message: { text: $('Chuẩn bị').first().json.reply } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        420
+      ],
+      "id": "d6000000-0000-4000-8000-000000000006",
+      "name": "Trả lời lỗi"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d6000000-0000-4000-8000-000000000007-c",
+              "leftValue": "={{ !!$('Chuẩn bị').first().json.ack }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000007",
+      "name": "Từ lệnh /anhbia?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Khi được gọi').first().json.group_id }, message: { text: $('Chuẩn bị').first().json.ack } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        60
+      ],
+      "id": "d6000000-0000-4000-8000-000000000008",
+      "name": "Báo đang tạo"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Chuẩn bị').first().json.linkAnh }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000009",
+      "name": "Tải ảnh vuông"
+    },
+    {
+      "parameters": {
+        "jsCode": "const buf = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst src = { mimeType: $input.first().binary.data.mimeType || 'image/jpeg', data: buf.toString('base64') };\nconst yc = String($('Chuẩn bị').first().json.yc || '').trim();\nconst prompt = \"Image 1 is a finished SQUARE social-media poster. Redesign the SAME poster as a HORIZONTAL 16:9 landscape banner. Keep the same visual style, background colors, the big colored background shapes (for example a large orange circle or blob behind the headline), 3D illustration and every headline text with the same text colors, but re-arrange them for landscape: the label pill and the big headline lines on the LEFT half (large, bold, easy to read), the main illustration on the RIGHT half, background filling the whole frame seamlessly. Copy every Vietnamese text EXACTLY, character by character, with the correct diacritics; do not add, remove, translate or reword any text and do not add any new text, numbers, phone numbers, websites, watermarks or brand names. IMPORTANT: do NOT draw the GOS ACADEMY logo and do NOT draw the dark-red hotline bar from the bottom of image 1 - they will be added later. Leave the top-left corner area (left 22% of the width, top 20% of the height) as plain background with nothing in it, and leave the bottom 12% of the height as plain background with nothing in it. Keep all text and important objects at least 7% away from the left and right edges. Flat, clean, professional, high resolution.\" + (yc ? ' Extra request from the editor (follow it, but never change the texts): ' + yc : '');\nconst body = { contents: [{ parts: [{ inlineData: src }, { text: prompt }] }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '16:9' } } };\nreturn [{ json: { src, body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000031",
+      "name": "Chuẩn bị gọi AI"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-image:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000032",
+      "name": "Tạo ảnh ngang (model rẻ)",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api Gen Image"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [ { inlineData: $('Chuẩn bị gọi AI').first().json.src }, { inlineData: ((($json.candidates || [])[0]?.content?.parts || []).find(p => p.inlineData) || {}).inlineData }, { text: \"You are a strict design QA reviewer. Image 1 is the original square poster, image 2 is the new horizontal 16:9 version. Set ok to true ONLY if ALL hold: (1) every headline/label text visible in image 1 (ignore the GOS ACADEMY logo and the hotline/website bar) appears in image 2 spelled EXACTLY the same with correct Vietnamese diacritics, nothing missing, garbled or duplicated; (2) image 2 contains no extra text that is not in image 1 (no logo text, no phone number, no website); (3) the top-left area (left 22%, top 20%) and the bottom 12% of image 2 are empty background; (4) no text or important object is cut off at the edges; (5) it looks like a real landscape layout, not a square poster with empty sides. In loi, describe each problem briefly in Vietnamese, or an empty string when ok.\" } ] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' }, loi: { type: 'STRING' } }, required: ['ok', 'loi'] } } }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000033",
+      "name": "Kiểm tra ảnh ngang",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api Gen Image"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "okbia",
+              "leftValue": "={{ (() => { const j = $('Tạo ảnh ngang (model rẻ)').first().json; if (!((j.candidates || [])[0]?.content?.parts || []).find(p => p.inlineData && p.inlineData.data)) return false; try { return JSON.parse(($json.candidates[0].content.parts || []).map(p => p.text || '').join('')).ok !== false; } catch (e) { return true; } })() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2200,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000034",
+      "name": "Ảnh ngang ổn?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Chuẩn bị gọi AI').first().json.body) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        400
+      ],
+      "id": "d6000000-0000-4000-8000-000000000035",
+      "name": "Tạo ảnh ngang (dự phòng)",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api Gen Image"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lấy ảnh ngang (ưu tiên model dự phòng nếu đã chạy) + logo + thanh hotline để ghép\nconst pick = (n) => { try { const j = $(n).first().json; return ((j.candidates || [])[0]?.content?.parts || []).find(p => p.inlineData && p.inlineData.data) || null; } catch (e) { return null; } };\nconst part = pick('Tạo ảnh ngang (dự phòng)') || pick('Tạo ảnh ngang (model rẻ)');\nlet kt = ''; try { const v = JSON.parse(($('Kiểm tra ảnh ngang').first().json.candidates[0].content.parts || []).map(p => p.text || '').join('')); kt = v.ok ? 'đạt' : v.loi; } catch (e) {}\nif (!part) return [{ json: { coAnh: false, kt } }];\nlet model = 'gemini-3.1-flash-lite-image'; try { if ($('Tạo ảnh ngang (dự phòng)').isExecuted && pick('Tạo ảnh ngang (dự phòng)')) model = 'gemini-3-pro-image'; } catch (e) {}\nconst header = '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';\nconst footer = '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';\nreturn [{ json: { coAnh: true, kt, model }, binary: {\n  data: { data: part.inlineData.data, mimeType: part.inlineData.mimeType || 'image/png', fileName: 'bia.png' },\n  header: { data: header, mimeType: 'image/png', fileName: 'header.png' },\n  footer: { data: footer, mimeType: 'image/png', fileName: 'footer.png' } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000036",
+      "name": "Lấy file ảnh ngang"
+    },
+    {
+      "parameters": {
+        "operation": "multiStep",
+        "operations": {
+          "operations": [
+            {
+              "operation": "resize",
+              "width": 1920,
+              "height": 1080,
+              "resizeOption": "ignoreAspectRatio"
+            },
+            {
+              "operation": "composite",
+              "dataPropertyNameComposite": "footer",
+              "positionX": 0,
+              "positionY": 972
+            },
+            {
+              "operation": "composite",
+              "dataPropertyNameComposite": "header",
+              "positionX": 140,
+              "positionY": 54
+            }
+          ]
+        },
+        "options": {
+          "fileName": "bia-oa.jpg",
+          "format": "jpeg",
+          "quality": 90
+        }
+      },
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        2860,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000037",
+      "name": "Ghép logo và hotline",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d6000000-0000-4000-8000-000000000010-c",
+              "leftValue": "={{ $('Lấy file ảnh ngang').first().json.coAnh && !!($binary && $binary.data) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3080,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000010",
+      "name": "Có ảnh bìa?"
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "POST",
+        "graphApiVersion": "v23.0",
+        "node": "<FACEBOOK_PAGE_ID>",
+        "edge": "photos",
+        "sendBinaryData": true,
+        "binaryPropertyName": "data",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "published",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        3300,
+        100
+      ],
+      "id": "d6000000-0000-4000-8000-000000000011",
+      "name": "Tải ảnh bìa lên Trang (ẩn)",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Graph API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "graphApiVersion": "v23.0",
+        "node": "={{ $json.id }}",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "fields",
+                "value": "images"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        3520,
+        100
+      ],
+      "id": "d6000000-0000-4000-8000-000000000012",
+      "name": "Lấy link ảnh bìa",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Graph API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ảnh bìa OA",
+              "displayName": "Ảnh bìa OA",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "value": {
+            "ID": "={{ $('Chuẩn bị').first().json.id }}",
+            "Ảnh bìa OA": "={{ (() => { const h = (s) => { let h = 5381; for (const ch of String(s || '')) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0; return h.toString(36); }; const u = (($('Lấy link ảnh bìa').first().json.images || []).sort((a, b) => b.width - a.width)[0] || {}).source || ''; return u ? u + '#src=' + h($('Chuẩn bị').first().json.linkAnh) : ''; })() }}"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        3740,
+        100
+      ],
+      "id": "d6000000-0000-4000-8000-000000000020",
+      "name": "Ghi ảnh bìa vào Sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Ghép logo và hotline').first();\nreturn [{ json: {}, binary: { data: src.binary.data } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3960,
+        100
+      ],
+      "id": "d6000000-0000-4000-8000-000000000013",
+      "name": "Ảnh cho Zalo"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v2.0/oa/upload/image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4180,
+        100
+      ],
+      "id": "d6000000-0000-4000-8000-000000000014",
+      "name": "Zalo: tải ảnh bìa",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gửi ảnh bìa vào nhóm để xem trước (hoặc báo chưa tạo được)\nconst p = $('Chuẩn bị').first().json;\nlet url = ''; try { if ($('Lấy link ảnh bìa').isExecuted) url = (($('Lấy link ảnh bìa').first().json.images || []).sort((a, b) => b.width - a.width)[0] || {}).source || ''; } catch (e) {}\nlet att = null;\nfor (const nm of ['Zalo: tải ảnh bìa (thử lại)', 'Zalo: tải ảnh bìa']) { try { if (!att && $(nm).isExecuted) att = $(nm).first().json.data?.attachment_id || null; } catch (e) {} }\nlet kt = ''; try { kt = $('Lấy file ảnh ngang').first().json.kt || ''; } catch (e) {}\nif (!url) return [{ json: { message: { text: `⚠️ Chưa tạo được ảnh bìa Zalo OA cho bài #${p.id}${kt && kt !== 'đạt' ? ' (' + kt + ')' : ''}.\\nLúc đăng sẽ tạm dùng ảnh vuông đặt giữa nền mờ. Thử lại: /anhbia ${p.id} [yêu cầu]` } } }];\nconst text = `🖼 ẢNH BÌA ZALO OA – BÀI #${p.id}\\nẢnh ngang 16:9, dùng làm ảnh đại diện khi bài được đăng lên Zalo OA.\\nChưa ưng thì gõ: /anhbia ${p.id} <yêu cầu> (ví dụ: /anhbia ${p.id} chữ to hơn)\\n↩️ Quay lại ảnh bìa trước: /hoantac ${p.id} bia\\n✅ Ưng cả bài lẫn ảnh bìa thì gõ: /duyet ${p.id}`;\nreturn [{ json: { message: att ? { text, attachment: { type: 'template', payload: { template_type: 'media', elements: [{ media_type: 'image', attachment_id: att }] } } } : { text: text + '\\n🔗 ' + url } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4840,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000015",
+      "name": "Soạn tin"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Khi được gọi').first().json.group_id }, message: $json.message }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5060,
+        200
+      ],
+      "id": "d6000000-0000-4000-8000-000000000016",
+      "name": "Gửi vào nhóm"
+    },
+    {
+      "parameters": {
+        "content": "## 1. Nhận lệnh\nLệnh **/anhbia <số> [yêu cầu]** (quản lý tự gõ trước khi /duyet). Chỉ làm cho bài Chờ duyệt / Chờ đăng có ảnh.",
+        "height": 620,
+        "width": 1500,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -100
+      ],
+      "id": "d6000000-0000-4000-8000-000000000040",
+      "name": "📌 1"
+    },
+    {
+      "parameters": {
+        "content": "## 2. AI dàn lại ảnh ngang 16:9\nĐưa ảnh vuông đã duyệt cho model rẻ vẽ lại bố cục ngang (chữ trái, hình phải, không vẽ logo/hotline) → AI kiểm tra chữ → lỗi thì vẽ lại bằng model xịn → code ghép logo GOS + thanh hotline.",
+        "height": 620,
+        "width": 1540,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        -100
+      ],
+      "id": "d6000000-0000-4000-8000-000000000041",
+      "name": "📌 2"
+    },
+    {
+      "parameters": {
+        "content": "## 3. Lưu & xem trước\nTải ảnh ẩn lên Fanpage lấy link → ghi cột **Ảnh bìa OA** trên Sheet → gửi ảnh vào nhóm Zalo để quản lý xem. Lúc 19:30 workflow Đăng chéo dùng ảnh này làm ảnh bìa OA.\nẢnh bìa cũ được lưu vào tab **Lịch sử sửa** (Loại: Ảnh bìa) → dùng /lichsu <số> bia, /hoantac <số> bia [số bản].",
+        "height": 620,
+        "width": 2220,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3040,
+        -100
+      ],
+      "id": "d6000000-0000-4000-8000-000000000042",
+      "name": "📌 3"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d9000000-0000-4000-8000-000000000001-c",
+              "leftValue": "={{ $json.error !== 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4400,
+        100
+      ],
+      "id": "d9000000-0000-4000-8000-000000000001",
+      "name": "Tải ảnh lỗi?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lấy lại ảnh để tải lên lần 2\nreturn [{ json: {}, binary: { data: $('Ghép logo và hotline').first().binary.data } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4180,
+        300
+      ],
+      "id": "d9000000-0000-4000-8000-000000000002",
+      "name": "Ảnh tải lại"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v2.0/oa/upload/image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4400,
+        300
+      ],
+      "id": "d9000000-0000-4000-8000-000000000003",
+      "name": "Zalo: tải ảnh bìa (thử lại)",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "oldbia",
+              "leftValue": "={{ !!$('Chuẩn bị').first().json.oldBia && !!$json.images }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3630,
+        320
+      ],
+      "id": "da000000-0000-4000-8000-000000000001",
+      "name": "Có ảnh bìa cũ?"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 156022683,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $('Chuẩn bị').first().json.id }}",
+            "Loại": "Ảnh bìa",
+            "Bản cũ": "={{ $('Chuẩn bị').first().json.oldBia }}",
+            "Lúc sửa": "={{ DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm') }}",
+            "Yêu cầu": "={{ (() => { const p = $('Chuẩn bị').first().json; return p.nguon === 'anhbia' ? ('/anhbia ' + (p.yc || '')).trim() : '/duyet (tạo lại)'; })() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Loại",
+              "displayName": "Loại",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Bản cũ",
+              "displayName": "Bản cũ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Lúc sửa",
+              "displayName": "Lúc sửa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Yêu cầu",
+              "displayName": "Yêu cầu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        3740,
+        320
+      ],
+      "name": "Lưu ảnh bìa cũ",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "id": "da000000-0000-4000-8000-000000000002"
+    }
+  ],
+  "connections": {
+    "Chuẩn bị gọi AI": {
+      "main": [
+        [
+          {
+            "node": "Tạo ảnh ngang (model rẻ)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tạo ảnh ngang (model rẻ)": {
+      "main": [
+        [
+          {
+            "node": "Kiểm tra ảnh ngang",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kiểm tra ảnh ngang": {
+      "main": [
+        [
+          {
+            "node": "Ảnh ngang ổn?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ảnh ngang ổn?": {
+      "main": [
+        [
+          {
+            "node": "Lấy file ảnh ngang",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tạo ảnh ngang (dự phòng)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tạo ảnh ngang (dự phòng)": {
+      "main": [
+        [
+          {
+            "node": "Lấy file ảnh ngang",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy file ảnh ngang": {
+      "main": [
+        [
+          {
+            "node": "Ghép logo và hotline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Khi được gọi": {
+      "main": [
+        [
+          {
+            "node": "Lấy token Zalo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy token Zalo": {
+      "main": [
+        [
+          {
+            "node": "Đọc lịch đăng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc lịch đăng": {
+      "main": [
+        [
+          {
+            "node": "Chuẩn bị",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chuẩn bị": {
+      "main": [
+        [
+          {
+            "node": "Hợp lệ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hợp lệ?": {
+      "main": [
+        [
+          {
+            "node": "Từ lệnh /anhbia?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trả lời lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Từ lệnh /anhbia?": {
+      "main": [
+        [
+          {
+            "node": "Báo đang tạo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tải ảnh vuông",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Báo đang tạo": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh vuông",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh vuông": {
+      "main": [
+        [
+          {
+            "node": "Chuẩn bị gọi AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghép logo và hotline": {
+      "main": [
+        [
+          {
+            "node": "Có ảnh bìa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có ảnh bìa?": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh bìa lên Trang (ẩn)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Soạn tin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh bìa lên Trang (ẩn)": {
+      "main": [
+        [
+          {
+            "node": "Lấy link ảnh bìa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy link ảnh bìa": {
+      "main": [
+        [
+          {
+            "node": "Có ảnh bìa cũ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghi ảnh bìa vào Sheet": {
+      "main": [
+        [
+          {
+            "node": "Ảnh cho Zalo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ảnh cho Zalo": {
+      "main": [
+        [
+          {
+            "node": "Zalo: tải ảnh bìa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zalo: tải ảnh bìa": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh lỗi?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin": {
+      "main": [
+        [
+          {
+            "node": "Gửi vào nhóm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh lỗi?": {
+      "main": [
+        [
+          {
+            "node": "Ảnh tải lại",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Soạn tin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ảnh tải lại": {
+      "main": [
+        [
+          {
+            "node": "Zalo: tải ảnh bìa (thử lại)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zalo: tải ảnh bìa (thử lại)": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có ảnh bìa cũ?": {
+      "main": [
+        [
+          {
+            "node": "Lưu ảnh bìa cũ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi ảnh bìa vào Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lưu ảnh bìa cũ": {
+      "main": [
+        [
+          {
+            "node": "Ghi ảnh bìa vào Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "tags": []
+}

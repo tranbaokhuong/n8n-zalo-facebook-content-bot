@@ -1,0 +1,2786 @@
+{
+  "name": "Sửa bài từ Zalo",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        304
+      ],
+      "id": "e0000000-0000-4000-8000-000000000001",
+      "name": "Khi được gọi"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "oa_id",
+              "keyValue": "={{ $('Khi được gọi').first().json.oa_id }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        304
+      ],
+      "id": "e0000000-0000-4000-8000-000000000002",
+      "name": "Lấy token Zalo",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        448,
+        304
+      ],
+      "id": "e0000000-0000-4000-8000-000000000003",
+      "name": "Đọc lịch đăng",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Kiểm tra lệnh và bài (/sua, /anh, /hoantac, /lichsu)\nconst cmd = $('Khi được gọi').first().json;\nconst id = Number(cmd.id);\nconst rows = $('Đọc lịch đăng').all().map(i => i.json);\nconst row = rows.find(r => Number(r['ID']) === id);\nconst route = cmd.route;\nconst isSua = route === 'sua';\nconst req = String(cmd.request || '').trim();\nif (!row) return [{ json: { ok: false, reply: `❌ Không tìm thấy bài #${cmd.id} trong lịch đăng.` } }];\nconst st = String(row['Trạng thái'] || '').trim();\nconst rawContent = String(row['Nội dung'] || '');\nconst rawImage = String(row['Link ảnh'] || '');\nconst note = String(row['Ghi chú'] || '').trim();\nconst content = rawContent.split('---***---')[0].trim();\nconst now = DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm');\n\n// ----- Lịch sử phiên bản: đánh số cố định theo thứ tự lưu, bỏ bản trùng -----\nlet hist = [];\ntry { hist = $('Đọc lịch sử').all().map(i => i.json).filter(h => h && Number(h['ID']) === id && String(h['Bản cũ'] || '').trim()); } catch (e) {}\nconst LOAI = { chu: 'Chữ', anh: 'Ảnh', bia: 'Ảnh bìa' };\nconst cur = { chu: rawContent.trim(), anh: rawImage.trim(), bia: String(row['Ảnh bìa OA'] || '').trim() };\nfunction versions(loai) {\n  const list = []; const seen = new Set(); let prevReq = loai === 'bia' ? '/anhbia' : 'AI viết';\n  for (const h of hist.filter(x => String(x['Loại'] || '').trim() === LOAI[loai])) {\n    const v = String(h['Bản cũ']).trim();\n    if (!seen.has(v)) { seen.add(v); list.push({ n: list.length + 1, v, tao: prevReq, luc: String(h['Lúc sửa'] || '').trim() }); }\n    prevReq = String(h['Yêu cầu'] || '').trim() || prevReq;\n  }\n  // Bản đang dùng: nếu chưa có trong lịch sử thì là bản mới nhất (số tiếp theo)\n  if (cur[loai] && !seen.has(cur[loai])) list.push({ n: list.length + 1, v: cur[loai], tao: prevReq, luc: '', hienTai: true });\n  for (const x of list) if (x.v === cur[loai]) x.dangDung = true;\n  return list;\n}\nconst vChu = versions('chu'), vAnh = versions('anh'), vBia = versions('bia');\nconst LOAI_RX = /^(ảnh\\s*bìa|anh\\s*bia|anh_bia|ảnh_bìa|bìa|bia|chu|chữ|anh|ảnh)?\\s*(\\d+)?$/i;\nconst loaiOf = (s) => !s ? '' : /b[iì]a/i.test(s) ? 'bia' : /^c/i.test(s) ? 'chu' : 'anh';\nconst TEN = { chu: 'chữ', anh: 'ảnh', bia: 'ảnh bìa' };\nconst listOf = (l) => l === 'chu' ? vChu : l === 'bia' ? vBia : vAnh;\nconst dongDau = (s) => (String(s).split('\\n').find(l => l.trim()) || '').trim().slice(0, 70);\nconst soChu = (s) => String(s).split('---***---')[0].split(/\\s+/).filter(Boolean).length;\n\n// /lichsu <số> [chu|anh]: liệt kê các bản đã có (xem được ở mọi trạng thái)\nif (route === 'lichsu') {\n  const chi = loaiOf(req.trim());\n  if (chi === 'bia' && !vBia.length) return [{ json: { ok: false, reply: `ℹ️ Bài #${id} chưa có ảnh bìa Zalo OA (gõ /anhbia ${id} để tạo, cần có trước khi /duyet).` } }];\n  if (vChu.length + vAnh.length <= 2 && !hist.length) return [{ json: { ok: false, reply: `ℹ️ Bài #${id} chưa sửa lần nào nên chưa có bản cũ.` } }];\n  const chuTxt = chi === 'anh' || chi === 'bia' ? '' : `✏️ CHỮ – ${vChu.length} bản:\\n` + vChu.slice(-15).map(x =>\n    `${x.n}. ${dongDau(x.v)}… (${soChu(x.v)} chữ; tạo bởi: ${String(x.tao).slice(0, 60)})${x.dangDung ? ' ← ĐANG DÙNG' : ''}`).join('\\n');\n  const anhList = chi === 'chu' ? [] : (chi === 'bia' ? vBia : vAnh).slice(-10);\n  return [{ json: { ok: true, route, id, note, chuTxt, anhList, soAnh: (chi === 'bia' ? vBia : vAnh).length, nhan: chi === 'bia' ? 'ảnh bìa' : 'ảnh', soBia: chi === 'bia' ? 0 : vBia.length,\n    cuoi: chi === 'bia' ? `👀 Xem 1 bản: \"/xem ${id} bia <số bản>\"\\n↩️ Dùng lại bản cũ: \"/hoantac ${id} bia <số bản>\"\\n🖌️ Tạo bản mới: \"/anhbia ${id} <yêu cầu>\"` : '',\n    ack: `🗂️ Đang lấy lịch sử bài #${id}${anhList.length ? ' (kèm ' + anhList.length + ' ảnh)' : ''}...` } }];\n}\n\n// /xem <số> chu|anh <số bản>: gửi toàn văn / ảnh của 1 bản để đọc, không đổi gì\nif (route === 'xem') {\n  const m = req.match(LOAI_RX) || [];\n  let loai = loaiOf(m[1]);\n  const so = m[2] ? Number(m[2]) : 0;\n  if (!so) return [{ json: { ok: false, reply: `ℹ️ Gõ: /xem ${id} chu <số bản> hoặc /xem ${id} anh <số bản>\\n(Xem số bản bằng /lichsu ${id})` } }];\n  if (!loai) {\n    const c = vChu.some(x => x.n === so), a = vAnh.some(x => x.n === so);\n    if (c && a) return [{ json: { ok: false, reply: `ℹ️ Bài #${id} có cả chữ bản ${so} và ảnh bản ${so}. Gõ rõ: /xem ${id} chu ${so} hoặc /xem ${id} anh ${so}` } }];\n    loai = c ? 'chu' : 'anh';\n  }\n  const list = listOf(loai);\n  const t = list.find(x => x.n === so);\n  if (!t) return [{ json: { ok: false, reply: `ℹ️ Bài #${id} không có ${TEN[loai]} bản ${so} (có bản 1–${list.length}). Gõ /lichsu ${id} để xem.` } }];\n  return [{ json: { ok: true, route, id, note,\n    head: `👀 BÀI #${id} – ${TEN[loai].toUpperCase()} BẢN ${so}${t.dangDung ? ' (ĐANG DÙNG)' : ''}\\n(tạo bởi: ${String(t.tao).slice(0, 80)})`,\n    chuTxt: loai === 'chu' ? t.v : '', anhList: loai !== 'chu' ? [t] : [], nhan: TEN[loai], soAnh: 1,\n    cuoi: t.dangDung ? `ℹ️ Đây là bản đang dùng. Gõ /lichsu ${id} để xem các bản khác.` : `↩️ Dùng bản này: \"/hoantac ${id} ${loai} ${so}\"\\n👀 Xem bản khác: \"/xem ${id} ${loai} <số bản>\"`,\n    ack: `👀 Đang lấy ${TEN[loai]} bản ${so} của bài #${id}...` } }];\n}\n\nif (st !== 'Chờ duyệt' && !(route === 'hoantac' && /b[iì]a/i.test(req) && st === 'Chờ đăng')) return [{ json: { ok: false, reply: `ℹ️ Bài #${id} đang ở trạng thái \"${st || 'trống'}\". Chỉ sửa được bài \"Chờ duyệt\".` } }];\n\n// /dungbai <số> + nội dung tự viết: thay toàn bộ chữ, giữ phần chữ ký cuối bài, bản cũ lưu lịch sử để /hoantac\nif (route === 'dungbai') {\n  const body = String(cmd.request || '').replace(/\\r/g, '').split('---***---')[0].replace(/\\n{3,}/g, '\\n\\n').trim();\n  if (body.split(/\\s+/).filter(Boolean).length < 15) return [{ json: { ok: false, reply: `ℹ️ Gõ /dungbai ${id} rồi XUỐNG DÒNG dán toàn bộ bài của bạn vào CÙNG 1 tin nhắn.\\nVí dụ:\\n/dungbai ${id}\\nTIÊU ĐỀ BÀI...\\nNội dung bài...\\n(Bot tự thêm phần chữ ký GOSTECH ở cuối, ảnh giữ nguyên.)` } }];\n  const i = rawContent.indexOf('---***---');\n  const full = i >= 0 ? body + '\\n\\n' + rawContent.slice(i).trim() : body;\n  if (full.trim() === rawContent.trim()) return [{ json: { ok: false, reply: `ℹ️ Nội dung gửi giống hệt bài #${id} hiện tại, không đổi gì.` } }];\n  return [{ json: { ok: true, route, id, req: '/dungbai', content, note, loai: 'chu', old: full, soBan: vChu.length + (vChu.some(x => x.v === full) ? 0 : 1),\n    luuLoai: 'Chữ', luuBan: cur.chu, luuYeuCau: '/dungbai (bài tự viết)',\n    restore: { 'ID': String(id), 'Nội dung': full, 'Link ảnh': rawImage, 'Ảnh bìa OA': cur.bia,\n      'Ghi chú': [note, `Dùng bài tự viết qua Zalo ${now} (${soChu(full)} chữ)`].filter(Boolean).join(' | ') },\n    ack: `📝 Đang thay nội dung bài #${id} bằng bài bạn gửi...` } }];\n}\n\n// /hoantac <số bài> [chu|anh] [số bản]\nif (route === 'hoantac') {\n  const m = req.match(LOAI_RX) || [];\n  let loai = loaiOf(m[1]);\n  const soBan = m[2] ? Number(m[2]) : 0;\n  let target = null;\n  if (soBan) {\n    if (!loai) {\n      const coChu = vChu.some(x => x.n === soBan), coAnh = vAnh.some(x => x.n === soBan);\n      if (coChu && coAnh) return [{ json: { ok: false, reply: `ℹ️ Bài #${id} có cả chữ bản ${soBan} và ảnh bản ${soBan}. Gõ rõ: /hoantac ${id} chu ${soBan} hoặc /hoantac ${id} anh ${soBan}` } }];\n      loai = coChu ? 'chu' : 'anh';\n    }\n    const list = listOf(loai);\n    target = list.find(x => x.n === soBan);\n    if (!target) return [{ json: { ok: false, reply: `ℹ️ Bài #${id} không có ${TEN[loai]} bản ${soBan} (có bản 1–${list.length}). Gõ /lichsu ${id} để xem.` } }];\n    if (target.dangDung) return [{ json: { ok: false, reply: `ℹ️ Bài #${id} đang dùng đúng ${TEN[loai]} bản ${soBan} rồi.` } }];\n  } else {\n    // Không ghi số: quay lại bản ngay trước bản đang dùng (lần thay đổi gần nhất)\n    const keyOf = (x) => x === 'Ảnh bìa' ? 'bia' : x === 'Ảnh' ? 'anh' : 'chu';\n    const cand = hist.filter(h => loai ? String(h['Loại']).trim() === LOAI[loai] : String(h['Loại']).trim() !== 'Ảnh bìa')\n      .filter(h => String(h['Bản cũ']).trim() !== cur[keyOf(String(h['Loại']).trim())]).pop();\n    if (!cand) return [{ json: { ok: false, reply: `ℹ️ Bài #${id} không còn bản ${loai ? TEN[loai] + ' ' : ''}cũ nào để quay lại. Gõ /lichsu ${id} để xem.` } }];\n    loai = keyOf(String(cand['Loại']).trim());\n    target = listOf(loai).find(x => x.v === String(cand['Bản cũ']).trim());\n  }\n  const old = target.v;\n  return [{ json: { ok: true, route, id, req, content, note, loai, old, soBan: target.n,\n    luuLoai: LOAI[loai], luuBan: cur[loai], luuYeuCau: `/hoantac về ${TEN[loai]} bản ${target.n}`,\n    restore: { 'ID': String(id), 'Nội dung': loai === 'chu' ? old : rawContent, 'Link ảnh': loai === 'anh' ? old : rawImage, 'Ảnh bìa OA': loai === 'bia' ? old : cur.bia,\n      'Ghi chú': [note, `Hoàn tác qua Zalo ${now}: về ${TEN[loai]} bản ${target.n}`].filter(Boolean).join(' | ') },\n    ack: `↩️ Đang đưa bài #${id} về ${loai === 'chu' ? 'nội dung' : TEN[loai]} bản ${target.n}...` } }];\n}\n\nif (isSua && !req) return [{ json: { ok: false, reply: `ℹ️ Gõ kèm yêu cầu sửa, ví dụ: /sua ${id} viết ngắn lại, thêm emoji đầu mỗi ý` } }];\n// /sua mà yêu cầu chỉ nói về ẢNH -> nhắc dùng /anh, không sửa chữ\nconst veAnh = /(ảnh|hình|thiết kế|banner|poster|logo)/i.test(req);\nconst veChu = /(chữ|nội dung|content|bài viết|viết|câu|đoạn|tiêu đề|hook|emoji|văn|chính tả|ngắn|dài|chi tiết|cụ thể|giọng)/i.test(req);\nif (isSua && veAnh && !veChu) return [{ json: { ok: false, reply: `ℹ️ Yêu cầu này là về ẢNH nên bot không sửa chữ.\\n🖼️ Gõ: /anh ${id} ${req}\\n(Mỗi bài hiện có 1 ảnh bìa, bot chưa làm bộ nhiều ảnh.)` } }];\n\n// Yêu cầu viết dài / chi tiết hơn -> nâng giới hạn chữ và bắt buộc dài hơn rõ rệt\nconst oldWords = content.split(/\\s+/).filter(Boolean).length;\nconst dai = isSua && /(chi tiết|dài hơn|dài ra|viết dài|cụ thể|mở rộng|đầy đủ hơn|kỹ hơn|kĩ hơn|ngắn quá|quá ngắn|hơi ngắn|thêm nội dung|giải thích thêm|sâu hơn)/i.test(req);\nconst ngan = isSua && /(ngắn|rút gọn|cô đọng|gọn lại|bớt chữ|tóm tắt|giảm số chữ)/i.test(req);\nconst vietLai = /(viết lại|hay hơn|hấp dẫn|cuốn hút|chuyên nghiệp hơn|giọng|phong cách|toàn bộ|cả bài|thay đổi nhiều|sáng tạo|mới hoàn toàn)/i.test(req);\nconst nho = isSua && !dai && !ngan && !vietLai;   // mặc định: yêu cầu cụ thể -> chỉ sửa đúng chỗ\nconst maxTu = dai ? Math.min(600, Math.max(450, Math.round(oldWords * 2.2))) : ngan ? Math.max(120, Math.round(oldWords * 0.8)) : Math.max(300, Math.round(oldWords * 1.15));\nconst them = (dai ? `\\n\\nYÊU CẦU VIẾT DÀI/CHI TIẾT: bài hiện có ${oldWords} chữ, bài mới phải dài ít nhất ${Math.round(oldWords * 1.6)} chữ (tối đa ${maxTu}). Giữ các ý chính, nhưng ngay dưới MỖI ý viết thêm 1-2 câu giải thích cụ thể (làm ở đâu, bấm gì, ví dụ ngắn). Không được chỉ đổi vài chữ.` : '')\n  + (isSua && veAnh ? '\\n\\nPHẦN NÀO TRONG YÊU CẦU NÓI VỀ ẢNH (thiết kế ảnh, thêm ảnh, màu của ảnh) thì BỎ QUA, không đưa vào nội dung bài.' : '');\nconst nhieuAnh = !isSua && /(\\d+|nhiều|bộ|thêm)\\s*(ảnh|hình)/i.test(req);\nreturn [{ json: { ok: true, route, id, req, content, rawContent, rawImage, layoutNow: ((note.match(/bố cục: ([a-z_0-9]+)/g) || []).map(x => x.replace('bố cục: ', '')).pop() || ''),\n  note, dai, oldWords, maxTu, nho, ngan,\n  them: them + (nho ? '\\n\\nĐÂY LÀ YÊU CẦU SỬA CỤ THỂ: chỉ thay đổi ĐÚNG phần được yêu cầu (và chỗ liên quan trực tiếp). Mọi câu, đoạn, tiêu đề, hook, emoji, xuống dòng khác phải GIỮ NGUYÊN TỪNG CHỮ như bài hiện tại. Không viết lại, không rút gọn, không thêm ý mới, không đổi giọng văn.' : ''), nhacAnh: isSua && veAnh,\n  ack: isSua ? `✏️ Đang sửa chữ bài #${id} theo yêu cầu, chờ khoảng 30 giây...` : `🖼️ Đang tạo lại ảnh bài #${id}, chờ khoảng 1 phút...` + (nhieuAnh ? '\\n(Mỗi bài hiện có 1 ảnh bìa: bot làm lại 1 ảnh theo yêu cầu.)' : '') } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        304
+      ],
+      "id": "e0000000-0000-4000-8000-000000000004",
+      "name": "Kiểm tra"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c5",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        304
+      ],
+      "id": "e0000000-0000-4000-8000-000000000005",
+      "name": "Hợp lệ?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Khi được gọi').first().json.group_id }, message: { text: $('Kiểm tra').first().json.reply } }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1104,
+        512
+      ],
+      "id": "e0000000-0000-4000-8000-000000000006",
+      "name": "Báo lỗi"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Khi được gọi').first().json.group_id }, message: { text: $('Kiểm tra').first().json.ack } }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1104,
+        208
+      ],
+      "id": "e0000000-0000-4000-8000-000000000007",
+      "name": "Báo đang xử lý"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c8",
+              "leftValue": "={{ $('Kiểm tra').first().json.route }}",
+              "rightValue": "sua",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1500,
+        420
+      ],
+      "id": "e0000000-0000-4000-8000-000000000008",
+      "name": "Sửa chữ hay ảnh?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  systemInstruction: { parts: [{ text: `Bạn là chuyên gia viết content viral hơn 10 năm kinh nghiệm, viết cho fanpage \"Học Viện Digital - GOS Academy\". Nhiệm vụ: SỬA bài viết dưới đây theo YÊU CẦU SỬA của người duyệt. Phải thực hiện ĐÚNG, ĐỦ và THẤY RÕ từng ý trong yêu cầu (ví dụ yêu cầu thêm emoji đầu mỗi ý thì MỖI dòng ý đều phải bắt đầu bằng một emoji phù hợp). ${$('Kiểm tra').first().json.nho ? 'Đây là yêu cầu sửa CỤ THỂ: chỉ sửa đúng chỗ được yêu cầu, giữ nguyên từng chữ toàn bộ phần còn lại (kể cả HOOK, các ý, emoji, xuống dòng);' : 'Người duyệt phải nhìn thấy ngay bài đã khác: được viết lại câu chữ, thêm/bớt/đổi ý khi cần để đáp ứng yêu cầu; chỉ giữ chủ đề và kiểu trình bày;'} DÒNG ĐẦU TIÊN (tiêu đề) phải giữ nguyên từng chữ, trừ khi yêu cầu nói đổi tiêu đề. Không dùng dấu nháy ngược hay markdown cho tên hàm/code. ${$('Kiểm tra').first().json.nho ? 'Không được viết lại hay rút gọn phần không liên quan đến yêu cầu.' : 'TUYỆT ĐỐI không trả lại bài gần như y nguyên.'} Nội dung phải cụ thể, thực chiến (làm ở đâu, hàm/công thức gì, ví dụ thật), không dùng câu sáo rỗng chung chung. Luật bắt buộc:\n1. TỐI ĐA ${$('Kiểm tra').first().json.maxTu || 300} từ, đếm cả tiêu đề – vượt là SAI (chi tiết nghĩa là cụ thể hơn, không phải dài lê thê; không chèn đoạn code dài)\n2. BẮT BUỘC xuống dòng thật sự bằng ký tự xuống dòng (trong chuỗi JSON viết là \\\\n), TUYỆT ĐỐI không dùng dấu hai chấm thay cho xuống dòng: HOOK một dòng riêng, mỗi ý trong danh sách là một dòng riêng, giữa các phần cách một dòng trống (một dòng trống). Không viết dồn một đoạn\n3. HOOK viết in hoa. Giữ nguyên KIỂU VIẾT và cách dùng emoji hiện có của bài (kể chuyện, hỏi đáp, danh sách...), trừ khi yêu cầu sửa nói đổi\n4. Không dùng markdown hay ký tự **. Dòng đánh dấu ảnh dạng [ảnh 2] (đứng riêng 1 dòng) phải giữ nguyên đúng như vậy và đứng sau đúng đoạn/ý mà nó đang đứng sau trong bài hiện tại; không thêm, không bỏ dòng đánh dấu\n5. Không viết thông tin liên hệ/chữ ký cuối bài (hệ thống tự thêm)\n6. Không bịa số liệu, giá, ưu đãi, cam kết không có trong bài hoặc yêu cầu\nTrả JSON: \"content\" là bài đã sửa hoàn chỉnh, \"tom_tat\" là 1-2 câu nêu CỤ THỂ những gì đã thay đổi (ví dụ: thêm giải thích cho 5 bước, viết lại câu mở đầu, bỏ đoạn kết cũ).` }] },\n  contents: [{ role: 'user', parts: [{ text: 'BÀI HIỆN TẠI:\\n' + $('Kiểm tra').first().json.content + '\\n\\nYÊU CẦU SỬA: ' + $('Kiểm tra').first().json.req + ($('Kiểm tra').first().json.them || '') + (() => { try { const v = JSON.parse($('Kiểm tra yêu cầu').first().json.candidates[0].content.parts.map(p => p.text || '').join('')); return v.ok ? '' : '\\n\\nLẦN SỬA TRƯỚC CÒN THIẾU: ' + v.thieu + ' (lần này phải làm đủ).'; } catch (e) { return ''; } })() }] }],\n  generationConfig: { temperature: 0.7, responseMimeType: 'application/json',\n    responseSchema: { type: 'OBJECT', properties: { content: { type: 'STRING' }, tom_tat: { type: 'STRING' } }, required: ['content', 'tom_tat'] } }\n}) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1744,
+        -96
+      ],
+      "id": "e0000000-0000-4000-8000-000000000010",
+      "name": "Viết lại (model rẻ)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  systemInstruction: { parts: [{ text: `Bạn là chuyên gia viết content viral hơn 10 năm kinh nghiệm, viết cho fanpage \"Học Viện Digital - GOS Academy\". Nhiệm vụ: SỬA bài viết dưới đây theo YÊU CẦU SỬA của người duyệt. Phải thực hiện ĐÚNG, ĐỦ và THẤY RÕ từng ý trong yêu cầu (ví dụ yêu cầu thêm emoji đầu mỗi ý thì MỖI dòng ý đều phải bắt đầu bằng một emoji phù hợp). ${$('Kiểm tra').first().json.nho ? 'Đây là yêu cầu sửa CỤ THỂ: chỉ sửa đúng chỗ được yêu cầu, giữ nguyên từng chữ toàn bộ phần còn lại (kể cả HOOK, các ý, emoji, xuống dòng);' : 'Người duyệt phải nhìn thấy ngay bài đã khác: được viết lại câu chữ, thêm/bớt/đổi ý khi cần để đáp ứng yêu cầu; chỉ giữ chủ đề và kiểu trình bày;'} DÒNG ĐẦU TIÊN (tiêu đề) phải giữ nguyên từng chữ, trừ khi yêu cầu nói đổi tiêu đề. Không dùng dấu nháy ngược hay markdown cho tên hàm/code. ${$('Kiểm tra').first().json.nho ? 'Không được viết lại hay rút gọn phần không liên quan đến yêu cầu.' : 'TUYỆT ĐỐI không trả lại bài gần như y nguyên.'} Nội dung phải cụ thể, thực chiến (làm ở đâu, hàm/công thức gì, ví dụ thật), không dùng câu sáo rỗng chung chung. Luật bắt buộc:\n1. TỐI ĐA ${$('Kiểm tra').first().json.maxTu || 300} từ, đếm cả tiêu đề – vượt là SAI (chi tiết nghĩa là cụ thể hơn, không phải dài lê thê; không chèn đoạn code dài)\n2. BẮT BUỘC xuống dòng thật sự bằng ký tự xuống dòng (trong chuỗi JSON viết là \\\\n), TUYỆT ĐỐI không dùng dấu hai chấm thay cho xuống dòng: HOOK một dòng riêng, mỗi ý trong danh sách là một dòng riêng, giữa các phần cách một dòng trống (một dòng trống). Không viết dồn một đoạn\n3. HOOK viết in hoa. Giữ nguyên KIỂU VIẾT và cách dùng emoji hiện có của bài (kể chuyện, hỏi đáp, danh sách...), trừ khi yêu cầu sửa nói đổi\n4. Không dùng markdown hay ký tự **. Dòng đánh dấu ảnh dạng [ảnh 2] (đứng riêng 1 dòng) phải giữ nguyên đúng như vậy và đứng sau đúng đoạn/ý mà nó đang đứng sau trong bài hiện tại; không thêm, không bỏ dòng đánh dấu\n5. Không viết thông tin liên hệ/chữ ký cuối bài (hệ thống tự thêm)\n6. Không bịa số liệu, giá, ưu đãi, cam kết không có trong bài hoặc yêu cầu\nTrả JSON: \"content\" là bài đã sửa hoàn chỉnh, \"tom_tat\" là 1-2 câu nêu CỤ THỂ những gì đã thay đổi (ví dụ: thêm giải thích cho 5 bước, viết lại câu mở đầu, bỏ đoạn kết cũ).` }] },\n  contents: [{ role: 'user', parts: [{ text: 'BÀI HIỆN TẠI:\\n' + $('Kiểm tra').first().json.content + '\\n\\nYÊU CẦU SỬA: ' + $('Kiểm tra').first().json.req + ($('Kiểm tra').first().json.them || '') + (() => { try { const v = JSON.parse($('Kiểm tra yêu cầu').first().json.candidates[0].content.parts.map(p => p.text || '').join('')); return v.ok ? '\\n\\nLẦN SỬA TRƯỚC CHƯA ĐẠT (sửa quá ít/gần như y nguyên, hoặc độ dài sai – TỐI ĐA ' + ($('Kiểm tra').first().json.maxTu || 300) + ' chữ): lần này phải thay đổi rõ rệt và đúng độ dài.' : '\\n\\nLẦN SỬA TRƯỚC CÒN THIẾU: ' + v.thieu + ' (lần này phải làm đủ).'; } catch (e) { return ''; } })() }] }],\n  generationConfig: { temperature: 0.7, responseMimeType: 'application/json',\n    responseSchema: { type: 'OBJECT', properties: { content: { type: 'STRING' }, tom_tat: { type: 'STRING' } }, required: ['content', 'tom_tat'] } }\n}) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1968,
+        32
+      ],
+      "id": "e0000000-0000-4000-8000-000000000011",
+      "name": "Viết lại (model xịn)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Model đôi khi dùng dấu \":\" thay cho xuống dòng (bài dính 1 khối) -> tách lại thành dòng\nfunction fixColon(s) {\n  s = String(s || '');\n  if ((s.match(/\\n/g) || []).length >= 3) return s;\n  const ICON = '(?:[0-9]\\\\uFE0F?\\\\u20E3|🔟|👉|💡|✅|❌|☑️|🚫|❓|📌|🔹|•)';\n  return s\n    .replace(new RegExp('\\\\s*:\\\\s*(?=' + ICON + ')', 'gu'), '\\n\\n')      // \":1️⃣ ...\" -> xuống 2 dòng trước mỗi ý\n    .replace(/([.!?…”)\\]])\\s*:\\s+/g, '$1\\n')                          // \"ý chính.: giải thích\" -> giải thích dòng dưới\n    .replace(/^([^\\n]{8,200}?[?!])\\s*:\\s*/, '$1\\n\\n')                    // tiêu đề dính câu mở đầu\n    .replace(/^([^\\n]{8,200}?[A-ZÀ-Ỹa-zà-ỹ0-9]):(?=[A-ZÀ-Ỹ])/, '$1\\n\\n')  // \"TIÊU ĐỀ:CÂU MỞ ĐẦU\"\n    .replace(/\\n{3,}/g, '\\n\\n').trim();\n}\n\nconst FOOTER = \"---***---\\nCÔNG TY TNHH GOSTECH\\nGiải pháp phát triển doanh nghiệp\\n📍 Trụ sở chính: Số nhà 11, ngõ 245/116/27 Phố Định Công, Phường Định Công, Hà Nội\\n📍 Văn phòng: Tòa A3 Vinhomes Hàm Nghi, Phường Từ Liêm, Hà Nội\\n📞 Hotline: 0968 343 342\\n🌐 Website: gostech.vn | hocviendigital.vn\";\nconst withFooter = (s) => { s = String(s || '').trim(); return !s || s.includes('CÔNG TY TNHH GOSTECH') ? s : s + '\\n\\n' + FOOTER; };\nfunction fixBreaks(s) {\n  s = String(s || '').trim();\n  if ((s.match(/\\n/g) || []).length >= 3) return s;\n  s = s.replace(/^([^.!?\\n]{8,160}[!?])\\s+/, '$1\\n\\n');\n  s = s.replace(/\\s+(?=(\\d{1,2}[.)]\\s|Thứ (nhất|hai|ba|tư|năm|sáu)\\b|Cuối cùng\\b|Đầu tiên\\b|Tiếp theo\\b))/g, '\\n\\n');\n  s = s.replace(/([.!?])\\s+(?=[A-ZÀ-Ỹ])/g, '$1\\n\\n');\n  return s.replace(/\\n{3,}/g, '\\n\\n').trim();\n}\n// Emoji mặc định: ý đánh số \"1.\" -> 1️⃣; dòng ý không có emoji ở đầu thì thêm ✅\nfunction addEmoji(s) {\n  const keys = ['0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];\n  const lines = String(s || '').split('\\n');\n  return lines.map((l, i) => {\n    const t = l.trim();\n    if (!t || t.startsWith('---***---')) return l;\n    const m = t.match(/^(\\d{1,2})[.)]\\s+(.*)$/);\n    if (m) return (keys[Number(m[1])] || '✅') + ' ' + m[2];\n    return l;\n  }).join('\\n');\n}\nconst r = $input.first().json;\nconst text = ((r.candidates || [])[0]?.content?.parts || []).map(p => p.text || '').join('');\nlet out; try { out = JSON.parse(text); } catch (e) { throw new Error('Gemini không trả JSON: ' + text.slice(0, 200)); }\n// Model đôi khi trả ký tự ⏎ hoặc chuỗi \\n thay cho xuống dòng -> đổi lại thành xuống dòng thật\nconst clean = (s) => String(s || '').replace(/\\r/g, '').replace(/[ \\t]*⏎[ \\t]*/g, '\\n').replace(/\\\\n/g, '\\n').replace(/\\*\\*/g, '').replace(/`/g, '').replace(/^#+\\s*/gm, '').replace(/\\n{3,}/g, '\\n\\n').trim();\nconst keep = String($('Kiểm tra').first().json.content || '').includes('1️⃣');\nconst content = withFooter((keep ? addEmoji : (x => x))(fixBreaks(fixColon(clean(out.content)))));\nif (!content) throw new Error('Bài sửa trống');\nconst k = $('Kiểm tra').first().json;\nconst now = DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm');\nreturn [{ json: { id: k.id, content, tom_tat: clean(out.tom_tat),\n  update: { 'ID': String(k.id), 'Nội dung': content, 'Ghi chú': [k.note, `Sửa chữ qua Zalo ${now}: ${k.req}`].filter(Boolean).join(' | ') } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2192,
+        -96
+      ],
+      "id": "e0000000-0000-4000-8000-000000000012",
+      "name": "Đọc bài sửa"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $('Bản cuối').first().json.update['ID'] }}",
+            "Nội dung": "={{ $('Bản cuối').first().json.update['Nội dung'] }}",
+            "Ghi chú": "={{ $('Bản cuối').first().json.update['Ghi chú'] }}"
+          },
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nội dung",
+              "displayName": "Nội dung",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ghi chú",
+              "displayName": "Ghi chú",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        3296,
+        -96
+      ],
+      "id": "e0000000-0000-4000-8000-000000000013",
+      "name": "Cập nhật chữ",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lenh = (id) => `👉 \"/duyet ${id}\" để đăng lúc 19:30, hoặc hẹn giờ: \"/duyet ${id} 20:15\" | \"/bo ${id}\" để bỏ\\n✏️ \"/sua ${id} <yêu cầu>\" để AI sửa chữ | 📝 \"/dungbai ${id}\" + xuống dòng dán bài tự viết (cùng 1 tin) để thay toàn bộ chữ\\n🖼️ \"/anh ${id}\" để AI vẽ lại ảnh (có thể kèm yêu cầu) | \"/anh ${id} ngang\" vẽ ảnh ngang 16:9 (đứng đầu album, dùng luôn làm ảnh bìa OA)\n📎 Dùng ảnh tự thiết kế: gửi ảnh hoặc file ảnh vào nhóm rồi gõ \"/dunganh ${id}\" (ảnh vuông = ảnh bài, ảnh ngang = ảnh bìa Zalo OA)\\n➕ \"/themanh ${id}\" thêm các ảnh vừa gửi (1 bài nhiều ảnh) | ➖ \"/xoaanh ${id} <số ảnh>\"\n🖌️ \"/anhbia ${id}\" để tạo ảnh bìa Zalo OA (cần có trước khi /duyet)\\n↩️ \"/hoantac ${id}\" quay lại bản ngay trước | \"/hoantac ${id} chu|anh|bia <số bản>\" về đúng bản đó\n🗂️ \"/lichsu ${id}\" xem các bản chữ + ảnh, \"/lichsu ${id} bia\" xem ảnh bìa | 👀 \"/xem ${id} chu|anh|bia <số bản>\" xem 1 bản\n⏰ \"/hengio ${id} <giờ>\" đổi giờ đăng | 📋 \"/choduyet\" xem các bài đang chờ`;\nfunction splitMsgs(text) {\n  const out = []; const max = 1900; let cur = '';\n  for (const para of String(text).split(/\\n{2,}/)) {\n    const joined = cur ? cur + '\\n\\n' + para : para;\n    if (joined.length <= max) { cur = joined; continue; }\n    if (cur) out.push({ text: cur });\n    cur = para.length <= max ? para : '';\n    if (para.length > max) for (let i = 0; i < para.length; i += max) out.push({ text: para.slice(i, i + max) });\n  }\n  if (cur) out.push({ text: cur });\n  return out;\n}\nconst r = $('Bản cuối').first().json;\nlet att = null; try { if ($('Zalo: tải ảnh bài (sửa)').isExecuted) att = $('Zalo: tải ảnh bài (sửa)').first().json.data?.attachment_id || null; } catch (e) {}\nconst head = `✏️ BÀI #${r.id} ĐÃ SỬA${r.tom_tat ? ': ' + r.tom_tat : ''}\\n(Ảnh giữ nguyên)${$('Kiểm tra').first().json.nhacAnh ? '\\n🖼️ Phần yêu cầu về ảnh: gõ /anh ' + r.id + ' <yêu cầu>' : ''}`;\nconst msgs = [att ? { text: head, attachment: { type: 'template', payload: { template_type: 'media', elements: [{ media_type: 'image', attachment_id: att }] } } } : { text: head }, ...splitMsgs(r.content), { text: lenh(r.id) }];\nreturn msgs.map(message => ({ json: { message } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3504,
+        -96
+      ],
+      "id": "e0000000-0000-4000-8000-000000000014",
+      "name": "Soạn tin sửa chữ"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Khi được gọi').first().json.group_id }, message: $json.message }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3728,
+        -96
+      ],
+      "id": "e0000000-0000-4000-8000-000000000015",
+      "name": "Gửi bài đã sửa"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  systemInstruction: { parts: [{ text: `Bạn là art director cho fanpage \"Học Viện Digital - GOS Academy\". Dựa trên BÀI VIẾT và YÊU CẦU VỀ ẢNH, đề xuất ảnh bìa mới. Trả JSON: \"image_title\" là tiêu đề in trên ảnh (tiếng Việt có dấu, IN HOA, tối đa 7 chữ; nếu yêu cầu ghi rõ tiêu đề thì dùng đúng tiêu đề đó), \"image_tag\" là nhãn chủ đề (tiếng Việt có dấu, IN HOA, 2-4 chữ), \"image_visual\" là mô tả bằng tiếng Anh Ý TƯỞNG HÌNH ẢNH sáng tạo, độc đáo cho riêng bài này (phong cách, cảnh, góc nhìn, bố cục tự chọn; mỗi bài một kiểu khác hẳn, tránh lối mòn \"chữ to + đồ vật 3D nhỏ trên nền kem\"), có thể có người (dân văn phòng, học viên, giảng viên người Việt...) nếu giúp ảnh sinh động, gần gũi hơn, KHÔNG có màn hình hiện chữ hoặc số đọc được; nếu có yêu cầu về ảnh thì ý tưởng phải làm đúng yêu cầu, nếu không thì phải KHÁC HẲN ảnh hiện tại. \"image_number\" là con số chính nếu bài dạng danh sách, không có thì chuỗi rỗng.` }] },\n  contents: [{ role: 'user', parts: [{ text: 'BÀI VIẾT:\\n' + $('Kiểm tra').first().json.content + '\\n\\nYÊU CẦU VỀ ẢNH: ' + ($('Kiểm tra').first().json.req || '(không có, làm ảnh mới khác ảnh cũ)') }] }],\n  generationConfig: { temperature: 0.9, responseMimeType: 'application/json',\n    responseSchema: { type: 'OBJECT', properties: { image_title: { type: 'STRING' }, image_tag: { type: 'STRING' }, image_visual: { type: 'STRING' }, image_number: { type: 'STRING' } }, required: ['image_title', 'image_tag', 'image_visual', 'image_number'] } }\n}) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1744,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000020",
+      "name": "Ý tưởng ảnh (model rẻ)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  systemInstruction: { parts: [{ text: `Bạn là art director cho fanpage \"Học Viện Digital - GOS Academy\". Dựa trên BÀI VIẾT và YÊU CẦU VỀ ẢNH, đề xuất ảnh bìa mới. Trả JSON: \"image_title\" là tiêu đề in trên ảnh (tiếng Việt có dấu, IN HOA, tối đa 7 chữ; nếu yêu cầu ghi rõ tiêu đề thì dùng đúng tiêu đề đó), \"image_tag\" là nhãn chủ đề (tiếng Việt có dấu, IN HOA, 2-4 chữ), \"image_visual\" là mô tả bằng tiếng Anh Ý TƯỞNG HÌNH ẢNH sáng tạo, độc đáo cho riêng bài này (phong cách, cảnh, góc nhìn, bố cục tự chọn; mỗi bài một kiểu khác hẳn, tránh lối mòn \"chữ to + đồ vật 3D nhỏ trên nền kem\"), có thể có người (dân văn phòng, học viên, giảng viên người Việt...) nếu giúp ảnh sinh động, gần gũi hơn, KHÔNG có màn hình hiện chữ hoặc số đọc được; nếu có yêu cầu về ảnh thì ý tưởng phải làm đúng yêu cầu, nếu không thì phải KHÁC HẲN ảnh hiện tại. \"image_number\" là con số chính nếu bài dạng danh sách, không có thì chuỗi rỗng.` }] },\n  contents: [{ role: 'user', parts: [{ text: 'BÀI VIẾT:\\n' + $('Kiểm tra').first().json.content + '\\n\\nYÊU CẦU VỀ ẢNH: ' + ($('Kiểm tra').first().json.req || '(không có, làm ảnh mới khác ảnh cũ)') }] }],\n  generationConfig: { temperature: 0.9, responseMimeType: 'application/json',\n    responseSchema: { type: 'OBJECT', properties: { image_title: { type: 'STRING' }, image_tag: { type: 'STRING' }, image_visual: { type: 'STRING' }, image_number: { type: 'STRING' } }, required: ['image_title', 'image_tag', 'image_visual', 'image_number'] } }\n}) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1968,
+        784
+      ],
+      "id": "e0000000-0000-4000-8000-000000000021",
+      "name": "Ý tưởng ảnh (dự phòng)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst text = ((r.candidates || [])[0]?.content?.parts || []).map(p => p.text || '').join('');\nlet out; try { out = JSON.parse(text); } catch (e) { throw new Error('Gemini không trả JSON: ' + text.slice(0, 200)); }\nconst clean = (s) => String(s || '').replace(/\\*\\*/g, '').trim();\nconst title = clean(out.image_title).toUpperCase();\nconst tag = clean(out.image_tag || 'KỸ NĂNG SỐ').toUpperCase();\nconst visual = clean(out.image_visual || 'a cute modern 3D illustration of a spreadsheet, bar charts and a clock');\n// Không dùng bố cục cố định nữa: AI tự sáng tạo phong cách + bố cục cho từng ảnh\nconst k = $('Kiểm tra').first().json;\nconst ngang = /(^|\\s)(ngang|khổ\\s*ngang|kho\\s*ngang|16:9)(\\s|$)/i.test(String(k.req || ''));\nconst layout = 'AI tự sáng tạo';\nconst V = visual;\nconst NUM = String(out.image_number || '').replace(/[^0-9]/g, '').slice(0, 2);\nconst YC = String(k.req || '').replace(/(^|\\s)(ngang|khổ\\s*ngang|kho\\s*ngang|16:9|vuông|vuong)(?=\\s|$)/gi, ' ').trim();\nconst LAYOUT = 'Invent your OWN original composition and art style for this specific topic; do not use a generic template and do not repeat the usual look (big title + small 3D object on a cream background). '\n  + 'Main idea: ' + V + '. Choose freely whatever style tells it best and stops the scroll in a Facebook feed, for example: bold editorial illustration, flat vector, paper-cut layers, isometric scene, realistic photo scene, clay 3D, collage, minimal geometric, cinematic lighting... with your own camera angle, depth and arrangement. '\n  + (NUM ? 'You may feature the number \"' + NUM + '\" prominently. ' : '')\n  + (YC ? 'Follow this request about the image: ' + YC + '. ' : '')\n  + 'The title must remain the large, clear, instantly readable focal point.';\nconst imgPrompt = [\n  (ngang ? 'Design a WIDE HORIZONTAL 16:9 cover image (landscape, it will be shown full width on top of a Facebook photo album) for' : 'Design a square 1:1 cover image for') + ' an educational Facebook post of a Vietnamese digital-skills academy. It is a knowledge-sharing post, NOT an advertisement: no call-to-action button, no benefit list, no price, no discount badge. People are welcome whenever they make the story more vivid (for example Vietnamese office workers, students or a teacher): natural, friendly, well-drawn faces and hands, never celebrities or real identifiable persons.',\n  'COMPOSITION: ' + LAYOUT,\n  'TEXT: a small topic label \"' + tag + '\" (styled to fit your design, e.g. pill, ribbon or sticker, in brand colors) and the title \"' + title + '\" in a bold, highly readable sans-serif with correct Vietnamese diacritics; typography, size contrast and color treatment are your choice within the brand colors, with the key words emphasized.',\n  'BACKGROUND AND MARGINS (strict): the background (color, texture or scene) runs seamlessly from edge to edge over the whole canvas, with NO bands, boxes, panels, cards, frames, borders or outlines anywhere around the edges or corners. Simply leave generous breathing room: nothing important near the top-left (left third, top fifth) and nothing important in the bottom tenth; the text starts about one fifth down. Keep all text inside safe margins.',\n  'Colors: only orange #FF851B, orange-red #EF3522, dark red #780D0D, white, cream #FFF5EE and dark gray #262626 (natural materials and colors are fine in photo-like scenes; keep the overall palette on brand). No neon, no metallic or glitter effects.',\n  'Any spreadsheet, chart, document or screen shows only abstract shapes, cells and bars, never letters or numbers. Copy every text above exactly with correct Vietnamese diacritics and do NOT add any other text, letters, numbers, watermarks, brand names, phone numbers or websites anywhere.'\n].join('\\n\\n');\nconst imgBody = { contents: [{ parts: [{ text: imgPrompt }] }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: ngang ? '16:9' : '1:1' } } };\nreturn [{ json: { imgBody, layout, title, ngang } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2192,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000022",
+      "name": "Chuẩn bị ảnh"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-image:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.imgBody) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000023",
+      "name": "Tạo ảnh (model rẻ)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api Gen Image"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c24",
+              "leftValue": "={{ !!(($json.candidates || [])[0]?.content?.parts || []).find(p => p.inlineData && p.inlineData.data) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2624,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000024",
+      "name": "Có ảnh chưa?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Chuẩn bị ảnh').first().json.imgBody) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2848,
+        784
+      ],
+      "id": "e0000000-0000-4000-8000-000000000025",
+      "name": "Tạo ảnh (dự phòng)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api Gen Image"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const pick = (n) => { try { const j = $(n).first().json; return ((j.candidates || [])[0]?.content?.parts || []).find(p => p.inlineData && p.inlineData.data) ? j : null; } catch (e) { return null; } };\nconst r = pick('Tạo ảnh (dự phòng)') || pick('Tạo ảnh (model rẻ)') || {};\nlet kiemTra = '';\ntry { const v = JSON.parse(($('Kiểm tra ảnh').first().json.candidates[0].content.parts || []).map(p => p.text || '').join('')); kiemTra = v.ok ? 'ảnh đạt' : 'model rẻ lỗi: ' + v.loi; } catch (e) {}\n\nconst part = ((r.candidates || [])[0]?.content?.parts || []).find(p => p.inlineData && p.inlineData.data);\nif (!part) throw new Error('Cả 2 model ảnh đều không trả về ảnh');\nconst mime = part.inlineData.mimeType || 'image/png';\n// khổ ngang: 1920x1080, logo cách lề như ảnh bìa OA, dải hotline 1920 ở đáy; khổ vuông giữ 1080x1080\nlet ngang = false; try { ngang = !!$('Chuẩn bị ảnh').first().json.ngang; } catch (e) {}\nconst khung = ngang ? { w: 1920, h: 1080, hx: 140, hy: 54, fy: 972 } : { w: 1080, h: 1080, hx: 54, hy: 54, fy: 972 };\nconst F1920 = 'iVBORw0KGgoAAAANSUhEUgAAB4AAAABsCAIAAAAE4TjmAAAY1klEQVR42u3df2xW930v8O96r5z0PoMklbu4QFEaO7SEXWrMhK6zGNQqDZMJ3C2kwRpRukyzb1G47iY8telQoiBWGs2ROo8JFSqlscIEGdDWDt7CokTgNZ4icAh3hEF4EpSSlKRWE8KspUxXun8c+dxvnl9+/PjBsenrJf54bD/nfM/3nCfnyXmf7/l8f+Nbs2YFAAAAAACotk/YBQAAAAAABAE0AAAAAABBAA0AAAAAQBBAAwAAAABAEEADAAAAABAE0AAAAAAABAE0AAAAAAAEATQAAAAAAEEADQAAAABAEEADAAAAAEAQQAMAAAAAEATQAAAAAAAEATQAAAAAAAQBNAAAAAAAQQANAAAAAEAQQAMAAAAAQBBAAwAAAAAQBNAAAAAAAAQBNAAAAAAABAE0AAAAAABBAA0AAAAAQBBAAwAAAABAEEADAAAAABAE0AAAAAAABAE0AAAAAAAEATQAAAAAAEEADQAAAABAEEADAAAAAEAQQAMAAAAAEATQAAAAAAAEATQAAAAAAAQBNAAAAAAAQQANAAAAAEAQQAMAAAAAQBBAAwAAAAAQBNAAAAAAAAQBNAAAAAAABAE0AAAAAABBAA0AAAAAQBBAAwAAAABA4r/aBdNfc0dH8uL98+dPDQwUfM/cxsb5y5Ylr/+1r+/ShQsf11bVZDKL7rorhHDymWcuj47OoP1c29Dw2aVLr73uuhDCO6dOnR8eLmf7azKZeU1NNy5cmPz45ksvvXX8+ITanVVX9+lbbknX8P758784c2bk7NkS75/X1HT9vHkhhA8vXnz39OmJtlimyXcthHBzS0u6hnI+nFVpdDp3MOfw/ezYsRLHGgAA4GOMGmaK6RxEzKqr++01awpedVZ3s6d+J1xNHyGCAJo13d3Ji5P9/cX+k56/bFn6tjdfemkKAuiCW1WTyTz6858nr0ey2b+5/fYZkUHf3NLyBz09tfX1Ob8/tGXLT3fsKNaFmkzmjoceaunszP9TX1fX0M6d47a7sLV1+Te+cVNzc87vT/b3P7V+fSh0m+FLf/7ni1avrrjF8r+3fnfDhjsffrhgQ8d27y7zsNY2NLQfPBj/psSHs1qNTtsOzqqra9m4Mf8DM5LN/qiz8/XBQec6AABgWkUNYYakz9M5iJhdV5fu6r6urjSAru5mfyw74ar5CBGU4GBm+fQtt6Sva+vr4x+nrdatW9sPHsxPn0MIdz788AMHDtRkMqFQ8vi///mfC6bPyVn4fz37bMEF0++G+3bvvn/Pnvz0ORRPqzceOVIwfS6nxQl9bz1w4EDBcDZpqNg+ybf2b/926hudnh2sbWj49pkzBT8wtfX17QcPpreOAQAAuLqDiKpv9gzdCQQjoAm/9g/jpPeyti9fXmZpgl+89lqIxnXGP07bbsaZ4NHe3rdPnLh29uw0nbypufmBAwe+v3JlyEse48z60JYtH37wwQ3z56dru6m5+d6dOwsOZE4C0Dh6Pjc0dOaf/unDDz4IIdwwf/5/vP9+yBv7fP+ePfG+fXHHjhDCnMWLf+f++9MWf3fDhhfGjlrF7t25M922kWx2ePfu8ruWs2/Lj9er1ej07GBNJvO1v//7+HCf2L8/hLB47dp0DWu6u985dco4aAAAgAmZcUHEldjs0murLOGBIIBmero8OvrIZz4zU2pAz4oehMk5C/90x440I76pubm5oyMucBEnj4M9Pc9t25b2dHD79j988snkr4tWr17Y2pr/HEqcPp/s7//Jpk3jlkz5H3/yJ+nrwZ6egc2b0x8Pf+97m4aHw9iQ7RI1Q8oxt7ExHWR9bmjoibvvjrvW8Q//kMTui1avntvYWOJLq7ahYU3ZUXi1Gp22HVy6fn16uyI+fEM7dy5sbU1vLfxBT8/jS5Y4jQAAAFytQcQV2uwZuhMISnBAxWe9l/fufXnv3ul/vmvZuDF9/XR7e5w2Xh4dfeLuu0NUliGuyXDbhg3p6zh9DiFcunBh/4MPpj8u/8Y3chpdsm5dHF4/tX59OQW702HOI9lsnD6HEEbOnj20ZUso9NxNBRbccUf6+u++9rWcrv0oGi2eTnoZxqtNcW5oaGoanbYdTD8w+Yfv1MDA0d7eMPac1NzGRucQAACAqzWIuHKbPUN3AsEIaK4ys+rq5jU1XT9vXgjhw4sXf3bs2MjZs8WmZ61fsSL95RfvuScJ43ImbA1lz4KaP+trTSZTv2JFsjGvPf98/paEvAGnn1269NrrrgshvHPq1Pnh4WKn1LmNjfOXLRt3U2symbTkwkg2+/Levfnn7r6urnSUa/2KFUl3ajKZeDRr/maMnD17bmgoHT09q64ujZhrMpl7d+1KG31u27aJHsR3Xn01/5dnnnuuWEXjiZo7NgL3ZH9/fjL+q0uXQnmFTdKQfdeqVbd9/etT0Oi07eCsurr0AzO8e3f+G94+cSJ9PXvOHA9DAQAAH4ubW1puXLhw3Ivu8hOGCpaqyWSWjpVDLFilsOAbCgYRFaQKk8wuajKZeU1NyT58//z57OHDpffhuJtdcIX5G1lsbRUkPBNqMUxwNqaJHtnJR0kEATRhaqPn//n44/nz141ksz/q7Iz/s5/90aoUiTSojSdsDROZBTVn1tfZc+bEFY2TNz/d0VHw1Dy3sbHtiSfyJwns6+qKy2KEsfHFacK7a9WqEhV15zU1pa8LxoLJ6Sx9fetYMY14iPF7b75ZcMHRkZG4oXQ/xCf9gb/4i+Q83rBixbjB+tHe3mQQ9I233hpKjuqdZN2of3zkkRf+6q9CCL/693/P/+s1s2alrz+8eHHc2hRHe3tfHxwcN4CefKPTvIN9XV3pV2bpd14bbQAAAMCUhQZpMcnU401NBQO+8hOGnCup33v00YJL7XnggTRquDw6etuGDUkCMJLN5lcpXHTXXekVWW9bW4kgooJUYTLZRRxHpHrb2j54++0J5SelV/h0e/u7p0/HG5nuuvy1TTThmWiLYYIDtCd6ZCdzOAhKcDDFahsavn3mTP5ZPnnkv/3gwSXr1k3l9sxZvDjnlJGU3H3gwIH8Ny9sbd145Ej+90Rybm3dujV3PWM3x0IIX8ibOTCW3NBLXCg0rDgZyxzyimDEweUN8+cXXDBTW5u+Tm7NhbEUO319fnh47fbt3z5z5t5du9Z0d6/p7m4/ePDRn//8S2NhZexffvCD9JDl9Lq2oSEd/nxoy5ZJnnlHzp596/jxt44fz///jJpM5itR+Yizhw+H8WpT9H/zm1PT6HTu4KULF4Z27kz+Ffyejj9F754+7ZQFAABMpUxtbX76HELYNDw8q66uKgnDwtbWTcPDxZbaeOTIwuhiOR0iVltfX9vQkPP+ZX/8xyEqaThu7yaaKlSWXXypqys/ug0h3L9nzxfvuaeCg1Jshffu2hXPEVVFU9DiZI7shA4HwQhoJuPGW29NH6nIEQ+tDR+9M5nOUBdCGMlmX9yxI3l/euq/d9eui2+/ndyl/ODChWS0ZvyGwZ6eZKjvuOM3y5Ekuck641Zuam6+uaUlvlla29AQn1+O9va+feLEtbNnN41N6dbS2fnGiy/GJ6aTfX3pCv/t2WdDyRw8fV3ihmRaTKNgKt3S2ZlTAzrZ7Pxv7vxSzgW/4EMIdz788IKvfOX7H03P3zp+vLetLdkbLZ2dC1etSo7jnMWL03UO9vS8UPa0eKG8e+Dp0y7Xzp4dV/nobWsrWLo6rk3R29ZWQRpeQaMzq4P529ASFZ6eKfM1AwAAV43kGudkf3/28OEb5s+Pr1BaNm6Mp7GZaMKQLhVf2qdLxdez9+/Z850FC5KrsKNPPZVenf333//9+Dp3Vl1dPKlSKGNA3kRThQqyi7mNjfHlZNrBxWvX3tTcHO/PMpVeYbrTxlV+wlOtFkubzJEt/3AQBNBMUm19/ZoJJox3Rl8Vgz096TfH0M6dC1tb0xNx+8GDD82eHcZGa4axW0nJi1f27atuXdr0QZ6hnTubOzrSTn1h5cr4rPF7jz5a8Nmfn+7Ysfqxx5KzT+tf/mX8VfHy3r3vnj5dTg3oT95wQzmbGhfTiPdk+hVyx0MPxRn0rLq6eIRs+OgA2/hQJt9254aGTuzfn57W0xNoc0dHzqNApwYGti9fvvHIkYKfhIIFSSap4NM6JR6qimtTFHyA6Eo0OuM6mPOR+MMnn4wPokeHAACAqRdfUb6yb19y4RlCaOnsjAPoiSYMpZcKIbw6MJAu9Tv33ZckkpcuXEiHgt358MNxTNkQjb176Yc/HLdfFaQKFWQXdz32WLHdUrCoxbhKrDDez6G853HLSXiq3oVi2zOZI1vm4SAowUGY8ipO8ZDb+CwfQjg1MBDfVoofeLmijvb2xoOIj0X1lz/1uc/FG5+eHw9t2RIvcnl09NDYYzK19fVzGxvDRwcLF6t1UC2D27eHaBB0UjejuaOjdevWb585U2z4c1w8OowNof3+ypVJcYbvr1yZlq8KIazp7o4D6xBCc0dH+j8BodCjQ/ft3p2zSHJYmzs6iv2r4KDX1tfH1UtCkdoUP9m0KVT11kuxRmduB2symdWPPZZ+Ws4NDR0rUoscAADgiorHM711/Pi5oaFqJQzxUif7+/OXOtrbm7xuGpuALoRw5K//OkRTI4a8Kg0j2ey4E9BVnCpMNLtIL+vyd8vLe/ee7O+faJJTYoXxHgvVy46q24USKj6yZR4OghHQTF76EEQoVIIjv5pSnHg+/93v5i/10g9/mI7k/dxtt01+RGc53j5xIny0Dn0Yb5LAT15/fbHaIyGE+cuWVRA3/8d774XyimGFQnft0oIYYaxuRvhoIfz0cLxz6lTBNQ/29OTs8FMDA4e2bElXVb9iRfqGJevWxWN1k+eGQgjx41FJ8aOc2h1L168vWGarnGG86dM6IYT4GaU13d2L16594u6742MX16Z4ur294loZE2p0JnYwjKXPDxw4EN+r2P/gg4Y/AwAAUy8/Xiz4KHBlCUO8VMExN/s3bty/cWPOL7PRlDzp+NY4Jy24AdVNFSrILgomNsd27y5x0Vp6hQW7+fLevdWqiXGFulBCxUe2zMNBEEAzee+8+mqJMgv5p4N4IGfByc3i20fT7ZZRPHdfBSWTwkRy8Nlz5hSLsIsNZ04KYuRPpJsUcIjnP0yr+n7w0cjylX378ld75rnn0gA63QM1mUz8wEvOTMTPbdt2x0MPJbvopubmha2t1bqRED+tE0J4obu7devWtKGl69enf82pTfHy3r1T0OgM7WDB9LnY7NIAAADTRGUJQ7xUiemXclweHT3a25vErGkZkLhKQzkT1F/pVCG/lYLzZpXf6/wVFtzPv7p0aZp34UofWYIAGmaKeGBy3a23Fgxt41lZ8x9yeev48ceXLJnb2Dh/2bJ0na8PDtZkMu0HD4axugrpUNlyxswWzMHju5G9bW05SeXl0dHntm1Lv02Xrl8f9+XY7t3Z4qfv98+fn9BOG9i8OW3otg0b0nx2xZ/+afqeX77xRs6N5RtvvTV9/cV77kl217hFusdtdIZ2sLahIWfWjie/+lXpMwAAQCgyzjeZZS6t0nCyv7+6E9TjyBIE0IRqZKy/9fnP58dhccD6yzfemLYbn07SWlDBG3TjOh+FgE3r179QaHbHW7785RDNjRCKRMY5O3ZpkcJVOaU5QpG5bkPJ+8wFbzxeHh0ttuYJjYaubWhIp2g4tnt3wWXThuKh3/GMjqVvLKd/7evqSvZbxY3OlA6WSJ/PDQ3lFxUBAAC4ahKGeKkSDx/ni6eV+8LKlb947bX0KdIyp8+50qlCyBv2VLCUx+w5c6q7wmtmzaruka16F670kSUIoJlW0uIPIYQvf+tb+XUDlv3RH6Wv33jxxWm78e+9+WZ+4YU0q/2govtjl0dHB3t6kriwtr5+ybp1OfunJpOJyy5ny3sMZG5jY7rUSDabE3HGhZO+eM89+af1BXfckf8VGH8ZFPzCrslkqlKPaeTs2XQ9v3zjjfx8Nm5oJJutyoGeykY/lg6GaBaOuG74YE/Pc9u2SZ8BAICrOGGIl8p5YDdx39hl8kg2+/iSJfGf0kmSWjo74/i4zMvzK50qhLzBbfnP7OaMUavKCm/7+tere2Sr3oVxTfLIMhN9wi64il26cCEtHFFbX986NsdrGIvD4rGcJUaSVvdmV/kbn86EsKa7O76Vmmz8xiNHkn+z6+pyvkKaOzoKDiXOMbh9e/r63l274kWSKr3pj31dXeMGhTWZTHNHx8YjR9LfPPnVr4bi5fZbOjvTeYHTTqUFoEey2TRojr8M7t+zJ6drOZt6sq9vMrs9/cDkb15NJnPHQw/9/w/MWJmREMKx3bv7urqK/YuT3MGenuSX8R3myhqdQR0smD4PbN4sfQYAAK7uhCFeatHq1flLpWOAhvNGv/6fH/84fZ2O9Brs6SnzSqriVGGiu+Xc0FCx3bJk3bqJDhcrvcJ4j1UmP+GpehfGTWYmeWQJRkAz3RzaujWtrdPS2blw1apkStP6FSviM8iuVatC8WdV7t+zJ3lc5cOLFyc5/dqE/OMjj6QbuWl4+GhvbzJz4OK1a9MHNM4NDcUjgpesW5fO17dr1ar4yY6Cp/W+rq70ZLfxyJGkiWtnz06D4KSJ/BuAC1tbl65fnwbKcxYvzpmFNr9Ycwjh8ujorlWr0grR9+/Zc25o6MT+/TmdCiH8KPrmvnThQnp7MNnOk/39SdM3zJ8ff8ePZLMnn3lmMvv88Pe+l3Yk3rychnLi+9J1MOpXrEjLWbyyb1/+CO7KGp1BHcxJn0ey2ffefLPgFMzvnz9frTkkAQAApkPCUGypnOvoo089FfKeYR3JZnMqMf7bs89e0VShAs9885vpWLS4gzmX+R/jCsdNeKrb4rjJzOSPLEEATZhmtygfb2pKy87W1tevySt2/HR7e/7p4PXBwXNDQ+mJJsnmTvb3T2UAPXL2bG9bW5rc5SS8if0PPhj/uGjNmhDVEiodQIcQhnbujJPH/CaSKr2h0Cyxi1avLnYbsET2/frgYNypm5qb88/mvW1tOYu/0N39yeuvT7ezYNPJdHaTvGGYs88Lbl4I4fGmpirODDCVjU59B2sbGuL0udh/hmGsArUAGgAAuJoShksXLsQjsQou1dvWVvAS7PnvfjeNMpPL3nEv8yeZKlTgrePH40FjOR082ttbsN2KV5hWEw0TKbtcOuGpbhfKSWYmeWQJSnAw3YycPfudBQvSB09yIstdq1YVy5T3P/hg+hTGx+XUwMD25csLbvzJ/v7vLFiQM8o4LkBR5t2zgc2bd61aVbDg76EtWyY6R1xfV9cjn/lM6fNm6U5tX768YAQ5sHlzb1tbscLEfV1df3P77fljrivb5483NRXcvOSrLn+3z6xGp7iD1/zmbzoLAQAAv84Jw+uDg8Wuwkay2WJXwSGEsx8tCjw88UnqJpoqVOaF7u6n29sLXqr/yw9+UNkKe9va8n/f29b2yr59Faxw3ISnil0oJ5mZ/JFlZvmNb1V79kyqLn1Uv8Tj+XMbG+cvW5a8/te+voJ3DmfV1c1rarp+3rwQwocXL/7s2LFyzrPxml97/vl0kWJbVfD3s+rqfnvsDtibL72U83hLOR2sbWj47NKl1153XfK288PDxQaoJhuc30ooY6Rq2sQ7p06dHx4uET3Pqqv79C233LhwYfLjhxcvvnv6dAUtfnrBgokekXipgvuzWuIPTNLQL157rYIR1gtbW9OVFPtwVr3R6dPB+MMfyph92AhoAADg440a4muc/IqUk0kYKliqnCvKaqUKk8wuajKZeU1NSVDw/vnz2cOHL4+OllhnZSu8uaUlHU7+dHt7mvhPNDuKE57KulCixXKSmXGP7OSjJIIAGgAAAACItW7d+qnPfS55/ZNNm+JktiaTeeDAgbSYxncWLKhieUwIakADAAAAwNXtjRdfjKeASudOjKewCiEc2rJF+kwwAhoAAAAACBMcBF16psFzQ0MTnbMKPkb/5fZrrrEXAAAAAGA6eO3553/5+us3Llr03z71qVBoYsAf/9mf/d///E87imAENAAAAABQmbmNjb/1+c8ncyeGQnPxQRBAAwAAAADwa+sTdgEAAAAAAEEADQAAAABAEEADAAAAABAE0AAAAAAAEATQAAAAAAAEATQAAAAAAEEADQAAAAAAQQANAAAAAEAQQAMAAAAAEATQAAAAAAAQBNAAAAAAAAQBNAAAAAAAQQANAAAAAABBAA0AAAAAQBBAAwAAAAAQBNAAAAAAABAE0AAAAAAABAE0AAAAAABBAA0AAAAAAEEADQAAAABAEEADAAAAABAE0AAAAAAAEATQAAAAAAAEATQAAAAAAEEADQAAAAAAQQANAAAAAEAQQAMAAAAAEATQAAAAAAAQBNAAAAAAAAQBNAAAAAAAQQANAAAAAABBAA0AAAAAQBBAAwAAAAAQBNAAAAAAABAE0AAAAAAABAE0AAAAAABBAA0AAAAAAEEADQAAAABAEEADAAAAADAT/T/hGaZ9xIAPvgAAAABJRU5ErkJggg==';\nreturn [{ json: { imageModel: (r.modelVersion || '') + (kiemTra ? ' (' + kiemTra + ')' : ''), ngang, ...khung }, binary: {\n  data: await this.helpers.prepareBinaryData(Buffer.from(part.inlineData.data, 'base64'), mime.includes('jpeg') ? 'ai.jpg' : 'ai.png', mime),\n  header: await this.helpers.prepareBinaryData(Buffer.from('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', 'base64'), 'header.png', 'image/png'),\n  footer: ngang ? await this.helpers.prepareBinaryData(Buffer.from(F1920, 'base64'), 'footer.png', 'image/png') : await this.helpers.prepareBinaryData(Buffer.from('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', 'base64'), 'footer.png', 'image/png'),\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3072,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000026",
+      "name": "Lấy file ảnh"
+    },
+    {
+      "parameters": {
+        "operation": "multiStep",
+        "operations": {
+          "operations": [
+            {
+              "operation": "resize",
+              "width": "={{ $json.w }}",
+              "height": "={{ $json.h }}",
+              "resizeOption": "ignoreAspectRatio"
+            },
+            {
+              "operation": "composite",
+              "dataPropertyNameComposite": "header",
+              "positionX": "={{ $json.hx }}",
+              "positionY": "={{ $json.hy }}"
+            },
+            {
+              "operation": "composite",
+              "dataPropertyNameComposite": "footer",
+              "positionY": "={{ $json.fy }}"
+            }
+          ]
+        },
+        "options": {
+          "fileName": "post.jpg",
+          "format": "jpeg",
+          "quality": 90
+        }
+      },
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        3280,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000027",
+      "name": "Ghép logo và footer"
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "POST",
+        "graphApiVersion": "v23.0",
+        "node": "<FACEBOOK_PAGE_ID>",
+        "edge": "photos",
+        "sendBinaryData": true,
+        "binaryPropertyName": "data",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "published",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        3504,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000028",
+      "name": "Tải ảnh lên Trang (ẩn)",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Graph API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "graphApiVersion": "v23.0",
+        "node": "={{ $json.id }}",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "fields",
+                "value": "images"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        3728,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000029",
+      "name": "Lấy link ảnh",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Graph API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const k = $('Kiểm tra').first().json;\nconst p = $('Chuẩn bị ảnh').first().json;\nconst imgs = $input.first().json.images || [];\nconst url = (imgs.sort((a, b) => b.width - a.width)[0] || {}).source || '';\nif (!url) throw new Error('Không lấy được link ảnh từ Facebook');\nconst now = DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm');\nconst im = $('Lấy file ảnh').first().json.imageModel;\nconst ngang = !!$('Lấy file ảnh').first().json.ngang;\nconst H = (s) => { let h = 5381; for (const ch of String(s || '')) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0; return h.toString(36); };\nconst row = $('Đọc lịch đăng').all().map(i => i.json).find(x => Number(x['ID']) === Number(k.id)) || {};\nconst biaCu = String(row['Ảnh bìa OA'] || '').trim();\nconst bia = ngang ? url + '#src=' + H(url) : biaCu;\nreturn [{ json: { id: k.id, layout: p.layout, url, ngang, biaCu, doiBia: ngang && !!biaCu,\n  update: { 'ID': String(k.id), 'Link ảnh': url, 'Ảnh bìa OA': bia, 'Ghi chú': [k.note, `Đổi ảnh${ngang ? ' NGANG' : ''} qua Zalo ${now} | ảnh: ${im} | bố cục: ${p.layout}${k.req ? ' | yêu cầu: ' + k.req : ''}`].filter(Boolean).join(' | ') } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3952,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000030",
+      "name": "Tạo cập nhật ảnh"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $('Tạo cập nhật ảnh').first().json.update['ID'] }}",
+            "Link ảnh": "={{ $('Tạo cập nhật ảnh').first().json.update['Link ảnh'] }}",
+            "Ghi chú": "={{ $('Tạo cập nhật ảnh').first().json.update['Ghi chú'] }}",
+            "Ảnh bìa OA": "={{ $('Tạo cập nhật ảnh').first().json.update['Ảnh bìa OA'] }}"
+          },
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Link ảnh",
+              "displayName": "Link ảnh",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ghi chú",
+              "displayName": "Ghi chú",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ảnh bìa OA",
+              "displayName": "Ảnh bìa OA",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        4384,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000031",
+      "name": "Cập nhật ảnh",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {}, binary: { data: $('Ghép logo và footer').first().binary.data } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4608,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000032",
+      "name": "Ảnh cho Zalo"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v2.0/oa/upload/image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4832,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000033",
+      "name": "Zalo: tải ảnh",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const lenh = (id) => `👉 \"/duyet ${id}\" để đăng lúc 19:30, hoặc hẹn giờ: \"/duyet ${id} 20:15\" | \"/bo ${id}\" để bỏ\\n✏️ \"/sua ${id} <yêu cầu>\" để AI sửa chữ | 📝 \"/dungbai ${id}\" + xuống dòng dán bài tự viết (cùng 1 tin) để thay toàn bộ chữ\\n🖼️ \"/anh ${id}\" để AI vẽ lại ảnh (có thể kèm yêu cầu) | \"/anh ${id} ngang\" vẽ ảnh ngang 16:9 (đứng đầu album, dùng luôn làm ảnh bìa OA)\n📎 Dùng ảnh tự thiết kế: gửi ảnh hoặc file ảnh vào nhóm rồi gõ \"/dunganh ${id}\" (ảnh vuông = ảnh bài, ảnh ngang = ảnh bìa Zalo OA)\\n➕ \"/themanh ${id}\" thêm các ảnh vừa gửi (1 bài nhiều ảnh) | ➖ \"/xoaanh ${id} <số ảnh>\"\n🖌️ \"/anhbia ${id}\" để tạo ảnh bìa Zalo OA (cần có trước khi /duyet)\\n↩️ \"/hoantac ${id}\" quay lại bản ngay trước | \"/hoantac ${id} chu|anh|bia <số bản>\" về đúng bản đó\n🗂️ \"/lichsu ${id}\" xem các bản chữ + ảnh, \"/lichsu ${id} bia\" xem ảnh bìa | 👀 \"/xem ${id} chu|anh|bia <số bản>\" xem 1 bản\n⏰ \"/hengio ${id} <giờ>\" đổi giờ đăng | 📋 \"/choduyet\" xem các bài đang chờ`;\nconst r = $('Tạo cập nhật ảnh').first().json;\nlet att = null; try { att = $input.first().json.data?.attachment_id || null; } catch (e) {}\nconst head = `🖼️ ẢNH ${r.ngang ? 'NGANG 16:9 ' : ''}MỚI CHO BÀI #${r.id} (bố cục: ${r.layout})\\n(Chữ giữ nguyên)` + (r.ngang ? '\\n📐 Ảnh ngang đứng đầu album Fanpage (thêm ảnh vuông bằng /themanh để có kiểu 1 ngang + 2–3 vuông) và dùng luôn làm ảnh bìa Zalo OA.' : '');\nconst msgs = [att ? { text: head, attachment: { type: 'template', payload: { template_type: 'media', elements: [{ media_type: 'image', attachment_id: att }] } } }\n                  : { text: head + '\\n⚠️ Chưa gửi được ảnh vào Zalo, xem ảnh ở cột Link ảnh trong Sheet.' }, { text: lenh(r.id) }];\nreturn msgs.map(message => ({ json: { message } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5056,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000034",
+      "name": "Soạn tin ảnh"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Khi được gọi').first().json.group_id }, message: $json.message }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5264,
+        656
+      ],
+      "id": "e0000000-0000-4000-8000-000000000035",
+      "name": "Gửi ảnh mới"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  contents: [{ parts: [{ text: 'Bạn là người kiểm duyệt cẩn thận. YÊU CẦU SỬA: ' + $('Kiểm tra').first().json.req + ($('Kiểm tra').first().json.dai ? ' (bài cũ ' + $('Kiểm tra').first().json.oldWords + ' chữ, bài mới phải dài hơn rõ rệt và mỗi ý có giải thích cụ thể)' : '') + '\\n\\nBÀI SAU KHI SỬA:\\n' + String($json.content || '').split('---***---')[0] + '\\n\\nBài đã thực hiện ĐẦY ĐỦ và ĐÚNG từng ý trong yêu cầu chưa? Kiểm tra thật kỹ từng ý trên chính văn bản (ví dụ yêu cầu thêm emoji đầu mỗi ý thì xem mọi dòng ý có thật sự bắt đầu bằng emoji không). Trả JSON: ok (true nếu đủ hết), thieu (liệt kê ngắn phần còn thiếu, rỗng nếu ok).' }] }],\n  generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' }, thieu: { type: 'STRING' } }, required: ['ok', 'thieu'] } }\n}) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        -256
+      ],
+      "id": "e0000000-0000-4000-8000-000000000016",
+      "name": "Kiểm tra yêu cầu",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c17",
+              "leftValue": "={{ (() => { const k = $('Kiểm tra').first().json; const nn = String($('Đọc bài sửa').first().json.content || '').split('---***---')[0].split('\\n').map(x => x.trim()).filter(Boolean); const oo = new Set(String(k.content || '').split('\\n').map(x => x.trim()).filter(Boolean)); if (nn.length && nn.filter(x => oo.has(x)).length / nn.length >= 0.8 && !k.nho && !/(chính tả|lỗi chữ|đổi chữ|thay từ|đổi từ|bỏ chữ|xóa|xoá)/i.test(k.req || '')) return false; const nw0 = nn.join(' ').split(/\\s+/).filter(Boolean).length; if (!k.ngan && nw0 < (k.oldWords || 0) * 0.6) return false; if (nw0 > (k.maxTu || 300) * 1.15) return false; if (k.dai) { const nw = String($('Đọc bài sửa').first().json.content || '').split('---***---')[0].trim().split(/\\s+/).length; if (nw < k.oldWords * 1.4) return false; } try { return JSON.parse(($json.candidates[0].content.parts || []).map(p => p.text || '').join('')).ok === true; } catch (e) { return true; } })() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2624,
+        -256
+      ],
+      "id": "e0000000-0000-4000-8000-000000000017",
+      "name": "Đạt yêu cầu?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Model đôi khi dùng dấu \":\" thay cho xuống dòng (bài dính 1 khối) -> tách lại thành dòng\nfunction fixColon(s) {\n  s = String(s || '');\n  if ((s.match(/\\n/g) || []).length >= 3) return s;\n  const ICON = '(?:[0-9]\\\\uFE0F?\\\\u20E3|🔟|👉|💡|✅|❌|☑️|🚫|❓|📌|🔹|•)';\n  return s\n    .replace(new RegExp('\\\\s*:\\\\s*(?=' + ICON + ')', 'gu'), '\\n\\n')      // \":1️⃣ ...\" -> xuống 2 dòng trước mỗi ý\n    .replace(/([.!?…”)\\]])\\s*:\\s+/g, '$1\\n')                          // \"ý chính.: giải thích\" -> giải thích dòng dưới\n    .replace(/^([^\\n]{8,200}?[?!])\\s*:\\s*/, '$1\\n\\n')                    // tiêu đề dính câu mở đầu\n    .replace(/^([^\\n]{8,200}?[A-ZÀ-Ỹa-zà-ỹ0-9]):(?=[A-ZÀ-Ỹ])/, '$1\\n\\n')  // \"TIÊU ĐỀ:CÂU MỞ ĐẦU\"\n    .replace(/\\n{3,}/g, '\\n\\n').trim();\n}\n\nconst FOOTER = \"---***---\\nCÔNG TY TNHH GOSTECH\\nGiải pháp phát triển doanh nghiệp\\n📍 Trụ sở chính: Số nhà 11, ngõ 245/116/27 Phố Định Công, Phường Định Công, Hà Nội\\n📍 Văn phòng: Tòa A3 Vinhomes Hàm Nghi, Phường Từ Liêm, Hà Nội\\n📞 Hotline: 0968 343 342\\n🌐 Website: gostech.vn | hocviendigital.vn\";\nconst withFooter = (s) => { s = String(s || '').trim(); return !s || s.includes('CÔNG TY TNHH GOSTECH') ? s : s + '\\n\\n' + FOOTER; };\nfunction fixBreaks(s) {\n  s = String(s || '').trim();\n  if ((s.match(/\\n/g) || []).length >= 3) return s;\n  s = s.replace(/^([^.!?\\n]{8,160}[!?])\\s+/, '$1\\n\\n');\n  s = s.replace(/\\s+(?=(\\d{1,2}[.)]\\s|Thứ (nhất|hai|ba|tư|năm|sáu)\\b|Cuối cùng\\b|Đầu tiên\\b|Tiếp theo\\b))/g, '\\n\\n');\n  s = s.replace(/([.!?])\\s+(?=[A-ZÀ-Ỹ])/g, '$1\\n\\n');\n  return s.replace(/\\n{3,}/g, '\\n\\n').trim();\n}\n// Emoji mặc định: ý đánh số \"1.\" -> 1️⃣; dòng ý không có emoji ở đầu thì thêm ✅\nfunction addEmoji(s) {\n  const keys = ['0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];\n  const lines = String(s || '').split('\\n');\n  return lines.map((l, i) => {\n    const t = l.trim();\n    if (!t || t.startsWith('---***---')) return l;\n    const m = t.match(/^(\\d{1,2})[.)]\\s+(.*)$/);\n    if (m) return (keys[Number(m[1])] || '✅') + ' ' + m[2];\n    return l;\n  }).join('\\n');\n}\nconst r = $input.first().json;\nconst text = ((r.candidates || [])[0]?.content?.parts || []).map(p => p.text || '').join('');\nlet out; try { out = JSON.parse(text); } catch (e) { throw new Error('Gemini không trả JSON: ' + text.slice(0, 200)); }\n// Model đôi khi trả ký tự ⏎ hoặc chuỗi \\n thay cho xuống dòng -> đổi lại thành xuống dòng thật\nconst clean = (s) => String(s || '').replace(/\\r/g, '').replace(/[ \\t]*⏎[ \\t]*/g, '\\n').replace(/\\\\n/g, '\\n').replace(/\\*\\*/g, '').replace(/`/g, '').replace(/^#+\\s*/gm, '').replace(/\\n{3,}/g, '\\n\\n').trim();\nconst keep = String($('Kiểm tra').first().json.content || '').includes('1️⃣');\nconst content = withFooter((keep ? addEmoji : (x => x))(fixBreaks(fixColon(clean(out.content)))));\nif (!content) throw new Error('Bài sửa trống');\nconst k = $('Kiểm tra').first().json;\nconst now = DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm');\nreturn [{ json: { id: k.id, content, tom_tat: clean(out.tom_tat),\n  update: { 'ID': String(k.id), 'Nội dung': content, 'Ghi chú': [k.note, `Sửa chữ qua Zalo ${now}: ${k.req}`].filter(Boolean).join(' | ') } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        32
+      ],
+      "id": "e0000000-0000-4000-8000-000000000018",
+      "name": "Đọc bài sửa (model xịn)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Bản cuối: bản model xịn (nếu có) hoặc bản model rẻ; KHÔNG lưu bài bị AI cắt cụt\nconst k = $('Kiểm tra').first().json;\nconst wc = (s) => String(s || '').split('---***---')[0].split(/\\s+/).filter(Boolean).length;\nconst du = (x) => x && x.content && (k.ngan || wc(x.content) >= (k.oldWords || 0) * 0.6);\nconst j = $input.first().json;\nif (j && j.content && j.update && du(j)) return [{ json: j }];\nconst r = $('Đọc bài sửa').first().json;\nif (du(r)) return [{ json: r }];\nthrow new Error(`AI trả bài #${k.id} bị cụt (chỉ ${wc((j && j.content) || (r && r.content))} chữ, bài hiện tại ${k.oldWords} chữ) nên KHÔNG lưu, bài giữ nguyên. Gõ lại /sua ${k.id} ${k.req}\nHoặc tự viết: /dungbai ${k.id} + xuống dòng dán bài (cùng 1 tin)`);"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2848,
+        -96
+      ],
+      "id": "e0000000-0000-4000-8000-000000000019",
+      "name": "Bản cuối"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  contents: [{ parts: [\n    { inlineData: ((($json.candidates || [])[0]?.content?.parts || []).find(p => p.inlineData) || {}).inlineData },\n    { text: 'You are a strict design QA reviewer. Look at this social-media cover image. Set ok to true ONLY if ALL of these hold: (1) the background continues seamlessly to every edge: there is NO separate rectangle, box, panel, card-shaped empty area, thin frame line, border or horizontal band drawn in the top-left area, along the top edge or along the bottom edge; (2) the top-left area (left 30%, top 18%) contains no text and no important object; (3) every Vietnamese text is spelled exactly right with correct diacritics; the expected title is: \"' + (() => { try { return $('Chuẩn bị ảnh').first().json.title; } catch (e) { return $('Đọc kết quả viết bài').first().json.shorten; } })() + '\". In loi, describe each problem briefly in Vietnamese, or an empty string when ok.' }\n  ] }],\n  generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' }, loi: { type: 'STRING' } }, required: ['ok', 'loi'] } }\n}) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2624,
+        480
+      ],
+      "id": "e0000000-0000-4000-8000-000000000090",
+      "name": "Kiểm tra ảnh",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c91",
+              "leftValue": "={{ (() => { try { return JSON.parse(($json.candidates[0].content.parts || []).map(p => p.text || '').join('')).ok !== false; } catch (e) { return true; } })() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2848,
+        480
+      ],
+      "id": "e0000000-0000-4000-8000-000000000091",
+      "name": "Ảnh ổn?"
+    },
+    {
+      "parameters": {
+        "content": "## 1. Nhận lệnh & kiểm tra\nKiểm tra bài tồn tại và đang Chờ duyệt; báo \"đang xử lý\" vào nhóm rồi chia nhánh chữ / ảnh.",
+        "height": 710,
+        "width": 1700,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        16
+      ],
+      "id": "7897897d-f02e-4bd6-bc7e-4376c7802374",
+      "name": "📌 1"
+    },
+    {
+      "parameters": {
+        "content": "## 2. Sửa chữ (/sua)\nModel rẻ sửa → model rẻ **tự kiểm tra** đã làm đủ yêu cầu chưa → thiếu thì **model xịn** sửa lại. Cập nhật Sheet và gửi bản mới vào nhóm (ảnh giữ nguyên).\nTrước khi ghi, bản cũ được lưu vào tab **Lịch sử sửa** (để /hoantac).",
+        "height": 664,
+        "width": 2280,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        -448
+      ],
+      "id": "e44bfe45-ba63-4cf9-8fdf-1c6524b6c677",
+      "name": "📌 2"
+    },
+    {
+      "parameters": {
+        "content": "## 3. Ảnh (/anh)\nLên ý tưởng ảnh theo yêu cầu → tạo ảnh (rẻ trước, lỗi thì Pro) → ghép logo + footer → cập nhật Sheet và gửi ảnh mới vào nhóm (chữ giữ nguyên).",
+        "height": 694,
+        "width": 3820,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        288
+      ],
+      "id": "f3f6c053-a988-476c-8c4a-0d749df27699",
+      "name": "📌 3"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 156022683,
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        560,
+        480
+      ],
+      "name": "Đọc lịch sử",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "id": "f1000000-0000-4000-8000-000000000001"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 156022683,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ String($('Kiểm tra').first().json.id) }}",
+            "Loại": "Chữ",
+            "Bản cũ": "={{ $('Kiểm tra').first().json.rawContent }}",
+            "Lúc sửa": "={{ DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm') }}",
+            "Yêu cầu": "={{ $('Kiểm tra').first().json.req }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Loại",
+              "displayName": "Loại",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Bản cũ",
+              "displayName": "Bản cũ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Lúc sửa",
+              "displayName": "Lúc sửa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Yêu cầu",
+              "displayName": "Yêu cầu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        3072,
+        -96
+      ],
+      "name": "Lưu bản cũ (chữ)",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "id": "f1000000-0000-4000-8000-000000000002"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 156022683,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ String($('Kiểm tra').first().json.id) }}",
+            "Loại": "Ảnh",
+            "Bản cũ": "={{ $('Kiểm tra').first().json.rawImage }}",
+            "Lúc sửa": "={{ DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm') }}",
+            "Yêu cầu": "={{ $('Kiểm tra').first().json.req }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Loại",
+              "displayName": "Loại",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Bản cũ",
+              "displayName": "Bản cũ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Lúc sửa",
+              "displayName": "Lúc sửa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Yêu cầu",
+              "displayName": "Yêu cầu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        4160,
+        656
+      ],
+      "name": "Lưu bản cũ (ảnh)",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "id": "f1000000-0000-4000-8000-000000000003"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "h1",
+              "leftValue": "={{ $('Kiểm tra').first().json.route }}",
+              "rightValue": "^(hoantac|dungbai)$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1500,
+        208
+      ],
+      "name": "Hoàn tác?",
+      "id": "f1000000-0000-4000-8000-000000000004"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $('Kiểm tra').first().json.restore['ID'] }}",
+            "Nội dung": "={{ $('Kiểm tra').first().json.restore['Nội dung'] }}",
+            "Link ảnh": "={{ $('Kiểm tra').first().json.restore['Link ảnh'] }}",
+            "Ghi chú": "={{ $('Kiểm tra').first().json.restore['Ghi chú'] }}",
+            "Ảnh bìa OA": "={{ $('Kiểm tra').first().json.restore['Ảnh bìa OA'] }}"
+          },
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nội dung",
+              "displayName": "Nội dung",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Link ảnh",
+              "displayName": "Link ảnh",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ghi chú",
+              "displayName": "Ghi chú",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ảnh bìa OA",
+              "displayName": "Ảnh bìa OA",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        1968,
+        1150
+      ],
+      "name": "Khôi phục",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "id": "f1000000-0000-4000-8000-000000000005"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "h2",
+              "leftValue": "={{ /^(anh|bia)$/.test($('Kiểm tra').first().json.loai) || !!((() => { const k = $('Kiểm tra').first().json; const r = $('Đọc lịch đăng').all().map(i => i.json).find(x => String(x['ID']) === String(k.id)) || {}; return String(r['Ảnh Zalo'] || r['Link ảnh'] || '').trim().replace(/#.*$/, ''); })()) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {},
+        "looseTypeValidation": true
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2192,
+        1150
+      ],
+      "name": "Ảnh khôi phục?",
+      "id": "f1000000-0000-4000-8000-000000000007"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Kiểm tra').first().json.loai === 'chu' ? (() => { const k = $('Kiểm tra').first().json; const r = $('Đọc lịch đăng').all().map(i => i.json).find(x => String(x['ID']) === String(k.id)) || {}; return String(r['Ảnh Zalo'] || r['Link ảnh'] || '').trim().replace(/#.*$/, ''); })() : String($('Kiểm tra').first().json.old).replace(/#.*$/, '') }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2416,
+        1060
+      ],
+      "name": "Tải ảnh cũ",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "id": "f1000000-0000-4000-8000-000000000008"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v2.0/oa/upload/image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        1060
+      ],
+      "name": "Zalo: tải ảnh cũ",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "id": "f1000000-0000-4000-8000-000000000009"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Soạn tin báo đã quay lại bản trước\nconst lenh = (id) => `👉 \"/duyet ${id}\" để đăng lúc 19:30, hoặc hẹn giờ: \"/duyet ${id} 20:15\" | \"/bo ${id}\" để bỏ\\n✏️ \"/sua ${id} <yêu cầu>\" để AI sửa chữ | 📝 \"/dungbai ${id}\" + xuống dòng dán bài tự viết (cùng 1 tin) để thay toàn bộ chữ\\n🖼️ \"/anh ${id}\" để AI vẽ lại ảnh (có thể kèm yêu cầu) | \"/anh ${id} ngang\" vẽ ảnh ngang 16:9 (đứng đầu album, dùng luôn làm ảnh bìa OA)\n📎 Dùng ảnh tự thiết kế: gửi ảnh hoặc file ảnh vào nhóm rồi gõ \"/dunganh ${id}\" (ảnh vuông = ảnh bài, ảnh ngang = ảnh bìa Zalo OA)\\n➕ \"/themanh ${id}\" thêm các ảnh vừa gửi (1 bài nhiều ảnh) | ➖ \"/xoaanh ${id} <số ảnh>\"\n🖌️ \"/anhbia ${id}\" để tạo ảnh bìa Zalo OA (cần có trước khi /duyet)\\n↩️ \"/hoantac ${id}\" quay lại bản ngay trước | \"/hoantac ${id} chu|anh|bia <số bản>\" về đúng bản đó\n🗂️ \"/lichsu ${id}\" xem các bản chữ + ảnh, \"/lichsu ${id} bia\" xem ảnh bìa | 👀 \"/xem ${id} chu|anh|bia <số bản>\" xem 1 bản\n⏰ \"/hengio ${id} <giờ>\" đổi giờ đăng | 📋 \"/choduyet\" xem các bài đang chờ`;\nfunction splitMsgs(text) {\n  const out = []; const max = 1900; let cur = '';\n  for (const para of String(text).split(/\\n{2,}/)) {\n    const joined = cur ? cur + '\\n\\n' + para : para;\n    if (joined.length <= max) { cur = joined; continue; }\n    if (cur) out.push({ text: cur });\n    cur = para.length <= max ? para : '';\n    if (para.length > max) for (let i = 0; i < para.length; i += max) out.push({ text: para.slice(i, i + max) });\n  }\n  if (cur) out.push({ text: cur });\n  return out;\n}\nconst k = $('Kiểm tra').first().json;\nlet msgs;\nif (k.loai === 'chu') {\n  const head = k.route === 'dungbai' ? `📝 BÀI #${k.id} ĐÃ DÙNG NỘI DUNG BẠN GỬI (bản ${k.soBan})\\n(Ảnh giữ nguyên, đã giữ phần chữ ký cuối bài. Muốn quay lại bài cũ: /hoantac ${k.id})`\n                                    : `↩️ BÀI #${k.id} ĐÃ VỀ NỘI DUNG BẢN ${k.soBan}\\n(Ảnh giữ nguyên)`;\n  let att = null; try { att = $('Zalo: tải ảnh cũ').first().json.data?.attachment_id || null; } catch (e) {}\n  msgs = [att ? { text: head, attachment: { type: 'template', payload: { template_type: 'media', elements: [{ media_type: 'image', attachment_id: att }] } } } : { text: head }, ...splitMsgs(k.old), { text: lenh(k.id) }];\n} else {\n  let att = null; try { att = $('Zalo: tải ảnh cũ').first().json.data?.attachment_id || null; } catch (e) {}\n  const head = k.loai === 'bia' ? `↩️ BÀI #${k.id} ĐÃ VỀ ẢNH BÌA ZALO OA BẢN ${k.soBan}\\n(Chữ và ảnh bài giữ nguyên)` : `↩️ BÀI #${k.id} ĐÃ VỀ ẢNH BẢN ${k.soBan}\\n(Chữ giữ nguyên)`;\n  msgs = [att ? { text: head, attachment: { type: 'template', payload: { template_type: 'media', elements: [{ media_type: 'image', attachment_id: att }] } } }\n              : { text: head + '\\n⚠️ Chưa gửi được ảnh vào Zalo, xem ảnh ở cột Link ảnh trong Sheet.' }, { text: lenh(k.id) }];\n}\nreturn msgs.map(message => ({ json: { message } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2864,
+        1150
+      ],
+      "name": "Soạn tin hoàn tác",
+      "id": "f1000000-0000-4000-8000-000000000010"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Khi được gọi').first().json.group_id }, message: $json.message }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3088,
+        1150
+      ],
+      "name": "Gửi tin hoàn tác",
+      "id": "f1000000-0000-4000-8000-000000000011"
+    },
+    {
+      "parameters": {
+        "content": "## 4. Hoàn tác (/hoantac <số> [chu|anh] [số bản])\nLưu bản đang dùng vào tab **Lịch sử sửa** → ghi bản được chọn vào Sheet → gửi lại vào nhóm. Không ghi số bản: về bản ngay trước. Có số bản: về thẳng bản đó (xem số bằng /lichsu).",
+        "height": 380,
+        "width": 1700,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        1010
+      ],
+      "name": "📌 4",
+      "id": "f1000000-0000-4000-8000-000000000012"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 156022683,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ String($('Kiểm tra').first().json.id) }}",
+            "Loại": "={{ $('Kiểm tra').first().json.luuLoai }}",
+            "Bản cũ": "={{ $('Kiểm tra').first().json.luuBan }}",
+            "Lúc sửa": "={{ DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm') }}",
+            "Yêu cầu": "={{ $('Kiểm tra').first().json.luuYeuCau }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Loại",
+              "displayName": "Loại",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Bản cũ",
+              "displayName": "Bản cũ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Lúc sửa",
+              "displayName": "Lúc sửa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Yêu cầu",
+              "displayName": "Yêu cầu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        1744,
+        1150
+      ],
+      "name": "Lưu bản đang dùng",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "id": "f1000000-0000-4000-8000-000000000060"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "h3",
+              "leftValue": "={{ $('Kiểm tra').first().json.route }}",
+              "rightValue": "^(lichsu|xem)$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1310,
+        208
+      ],
+      "name": "Xem lịch sử?",
+      "id": "f1000000-0000-4000-8000-000000000061"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mỗi ảnh cũ 1 item để tải về và gửi vào nhóm kèm số bản\nconst k = $('Kiểm tra').first().json;\nconst list = k.anhList || [];\nif (!list.length) return [{ json: { none: true, url: '' } }];\nreturn list.map(x => ({ json: { n: x.n, url: x.v, tao: x.tao, dangDung: !!x.dangDung } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        1550
+      ],
+      "name": "Danh sách ảnh cũ",
+      "id": "f1000000-0000-4000-8000-000000000062"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1968,
+        1550
+      ],
+      "name": "Tải ảnh bản cũ",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "id": "f1000000-0000-4000-8000-000000000063"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v2.0/oa/upload/image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2192,
+        1550
+      ],
+      "name": "Zalo: tải ảnh bản cũ",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "id": "f1000000-0000-4000-8000-000000000064"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Soạn tin lịch sử: danh sách chữ + từng ảnh cũ kèm số bản\nconst k = $('Kiểm tra').first().json;\nconst imgs = $('Danh sách ảnh cũ').all().map(i => i.json);\nlet ups = []; try { ups = $('Zalo: tải ảnh bản cũ').all().map(i => i.json); } catch (e) {}\nconst msgs = [];\nconst head = k.head || `🗂️ LỊCH SỬ BÀI #${k.id}`;\nif (k.chuTxt) {\n  const t = head + (k.route === 'xem' ? '\\n\\n' : '\\n') + k.chuTxt;\n  for (let i = 0; i < t.length; i += 1900) msgs.push({ text: t.slice(i, i + 1900) });\n} else if (k.route !== 'xem') msgs.push({ text: head });\nif (!imgs[0]?.none) {\n  if (k.route !== 'xem') msgs.push({ text: `🖼️ ${(k.nhan || 'ảnh').toUpperCase()} – ${k.soAnh} bản${k.soAnh > imgs.length ? ' (hiện ' + imgs.length + ' bản mới nhất)' : ''}:` });\n  imgs.forEach((x, i) => {\n    const cap = `🖼️ Bài #${k.id} – ${k.nhan || 'ảnh'} bản ${x.n}${x.dangDung ? ' ← ĐANG DÙNG' : ''}\\n(tạo bởi: ${String(x.tao).slice(0, 80)})`;\n    const att = ups[i]?.data?.attachment_id;\n    msgs.push(att ? { text: cap, attachment: { type: 'template', payload: { template_type: 'media', elements: [{ media_type: 'image', attachment_id: att }] } } }\n                  : { text: cap + '\\n⚠️ Không tải được ảnh này (link cũ có thể đã hết hạn).' });\n  });\n}\nmsgs.push({ text: k.cuoi || `👀 Đọc đầy đủ 1 bản: \"/xem ${k.id} chu <số bản>\"\\n↩️ Về đúng bản muốn dùng: \"/hoantac ${k.id} chu <số bản>\" hoặc \"/hoantac ${k.id} anh <số bản>\"\\n(Bản đang dùng vẫn được lưu lại, không mất bản nào.)${k.soBia ? '\\n🖼️ Ảnh bìa Zalo OA: ' + k.soBia + ' bản – xem: \"/lichsu ' + k.id + ' bia\"' : ''}` });\nreturn msgs.map(message => ({ json: { message } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2416,
+        1550
+      ],
+      "name": "Soạn tin lịch sử",
+      "id": "f1000000-0000-4000-8000-000000000065"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Khi được gọi').first().json.group_id }, message: $json.message }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        1550
+      ],
+      "name": "Gửi tin lịch sử",
+      "id": "f1000000-0000-4000-8000-000000000066"
+    },
+    {
+      "parameters": {
+        "content": "## 5. Xem lịch sử (/lichsu <số> [chu|anh])\nĐánh số các bản chữ và ảnh của bài (số cố định, không đổi), gửi danh sách chữ và từng ảnh cũ kèm số bản vào nhóm. Sau đó gõ /hoantac <số> chu|anh <số bản> để về thẳng bản đó.",
+        "height": 340,
+        "width": 1250,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        1420
+      ],
+      "name": "📌 5",
+      "id": "f1000000-0000-4000-8000-000000000067"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  systemInstruction: { parts: [{ text: `Bạn là chuyên gia viết content viral hơn 10 năm kinh nghiệm, viết cho fanpage \"Học Viện Digital - GOS Academy\". Nhiệm vụ: SỬA bài viết dưới đây theo YÊU CẦU SỬA của người duyệt. Phải thực hiện ĐÚNG, ĐỦ và THẤY RÕ từng ý trong yêu cầu (ví dụ yêu cầu thêm emoji đầu mỗi ý thì MỖI dòng ý đều phải bắt đầu bằng một emoji phù hợp). ${$('Kiểm tra').first().json.nho ? 'Đây là yêu cầu sửa CỤ THỂ: chỉ sửa đúng chỗ được yêu cầu, giữ nguyên từng chữ toàn bộ phần còn lại (kể cả HOOK, các ý, emoji, xuống dòng);' : 'Người duyệt phải nhìn thấy ngay bài đã khác: được viết lại câu chữ, thêm/bớt/đổi ý khi cần để đáp ứng yêu cầu; chỉ giữ chủ đề và kiểu trình bày;'} DÒNG ĐẦU TIÊN (tiêu đề) phải giữ nguyên từng chữ, trừ khi yêu cầu nói đổi tiêu đề. Không dùng dấu nháy ngược hay markdown cho tên hàm/code. ${$('Kiểm tra').first().json.nho ? 'Không được viết lại hay rút gọn phần không liên quan đến yêu cầu.' : 'TUYỆT ĐỐI không trả lại bài gần như y nguyên.'} Nội dung phải cụ thể, thực chiến (làm ở đâu, hàm/công thức gì, ví dụ thật), không dùng câu sáo rỗng chung chung. Luật bắt buộc:\n1. TỐI ĐA ${$('Kiểm tra').first().json.maxTu || 300} từ, đếm cả tiêu đề – vượt là SAI (chi tiết nghĩa là cụ thể hơn, không phải dài lê thê; không chèn đoạn code dài)\n2. BẮT BUỘC xuống dòng thật sự bằng ký tự xuống dòng (trong chuỗi JSON viết là \\\\n), TUYỆT ĐỐI không dùng dấu hai chấm thay cho xuống dòng: HOOK một dòng riêng, mỗi ý trong danh sách là một dòng riêng, giữa các phần cách một dòng trống (một dòng trống). Không viết dồn một đoạn\n3. HOOK viết in hoa. Giữ nguyên KIỂU VIẾT và cách dùng emoji hiện có của bài (kể chuyện, hỏi đáp, danh sách...), trừ khi yêu cầu sửa nói đổi\n4. Không dùng markdown hay ký tự **. Dòng đánh dấu ảnh dạng [ảnh 2] (đứng riêng 1 dòng) phải giữ nguyên đúng như vậy và đứng sau đúng đoạn/ý mà nó đang đứng sau trong bài hiện tại; không thêm, không bỏ dòng đánh dấu\n5. Không viết thông tin liên hệ/chữ ký cuối bài (hệ thống tự thêm)\n6. Không bịa số liệu, giá, ưu đãi, cam kết không có trong bài hoặc yêu cầu\nTrả JSON: \"content\" là bài đã sửa hoàn chỉnh, \"tom_tat\" là 1-2 câu nêu CỤ THỂ những gì đã thay đổi (ví dụ: thêm giải thích cho 5 bước, viết lại câu mở đầu, bỏ đoạn kết cũ).` }] },\n  contents: [{ role: 'user', parts: [{ text: 'BÀI HIỆN TẠI:\\n' + $('Kiểm tra').first().json.content + '\\n\\nYÊU CẦU SỬA: ' + $('Kiểm tra').first().json.req + ($('Kiểm tra').first().json.them || '') + (() => { try { const v = JSON.parse($('Kiểm tra yêu cầu').first().json.candidates[0].content.parts.map(p => p.text || '').join('')); return v.ok ? '\\n\\nLẦN SỬA TRƯỚC CHƯA ĐẠT (sửa quá ít/gần như y nguyên, hoặc độ dài sai – TỐI ĐA ' + ($('Kiểm tra').first().json.maxTu || 300) + ' chữ): lần này phải thay đổi rõ rệt và đúng độ dài.' : '\\n\\nLẦN SỬA TRƯỚC CÒN THIẾU: ' + v.thieu + ' (lần này phải làm đủ).'; } catch (e) { return ''; } })() }] }],\n  generationConfig: { temperature: 0.7, responseMimeType: 'application/json',\n    responseSchema: { type: 'OBJECT', properties: { content: { type: 'STRING' }, tom_tat: { type: 'STRING' } }, required: ['content', 'tom_tat'] } }\n}) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1968,
+        -290
+      ],
+      "name": "Viết lại (dự phòng)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      },
+      "id": "f1000000-0000-4000-8000-000000000101"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dbia",
+              "leftValue": "={{ $('Tạo cập nhật ảnh').first().json.doiBia }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4050,
+        856
+      ],
+      "id": "e3000000-0000-4000-8000-000000000001",
+      "name": "Đổi bìa?"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 156022683,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ String($('Kiểm tra').first().json.id) }}",
+            "Loại": "Ảnh bìa",
+            "Bản cũ": "={{ $('Tạo cập nhật ảnh').first().json.biaCu }}",
+            "Lúc sửa": "={{ DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm') }}",
+            "Yêu cầu": "={{ '/anh ' + $('Kiểm tra').first().json.id + ' ngang' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Loại",
+              "displayName": "Loại",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Bản cũ",
+              "displayName": "Bản cũ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Lúc sửa",
+              "displayName": "Lúc sửa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Yêu cầu",
+              "displayName": "Yêu cầu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        4270,
+        856
+      ],
+      "name": "Lưu bìa cũ",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "id": "e3000000-0000-4000-8000-000000000002"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "coab",
+              "leftValue": "={{ !!((() => { const k = $('Kiểm tra').first().json; const r = $('Đọc lịch đăng').all().map(i => i.json).find(x => String(x['ID']) === String(k.id)) || {}; return String(r['Ảnh Zalo'] || r['Link ảnh'] || '').trim().replace(/#.*$/, ''); })()) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3064,
+        124
+      ],
+      "id": "e4000000-0000-4000-8000-000000000001",
+      "name": "Có ảnh bài?"
+    },
+    {
+      "parameters": {
+        "url": "={{ (() => { const k = $('Kiểm tra').first().json; const r = $('Đọc lịch đăng').all().map(i => i.json).find(x => String(x['ID']) === String(k.id)) || {}; return String(r['Ảnh Zalo'] || r['Link ảnh'] || '').trim().replace(/#.*$/, ''); })() }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3284,
+        124
+      ],
+      "name": "Tải ảnh bài (sửa)",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "id": "e4000000-0000-4000-8000-000000000002"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v2.0/oa/upload/image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3504,
+        124
+      ],
+      "name": "Zalo: tải ảnh bài (sửa)",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "id": "e4000000-0000-4000-8000-000000000003"
+    }
+  ],
+  "connections": {
+    "Khi được gọi": {
+      "main": [
+        [
+          {
+            "node": "Lấy token Zalo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy token Zalo": {
+      "main": [
+        [
+          {
+            "node": "Đọc lịch đăng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc lịch đăng": {
+      "main": [
+        [
+          {
+            "node": "Đọc lịch sử",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kiểm tra": {
+      "main": [
+        [
+          {
+            "node": "Hợp lệ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hợp lệ?": {
+      "main": [
+        [
+          {
+            "node": "Báo đang xử lý",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Báo lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Báo đang xử lý": {
+      "main": [
+        [
+          {
+            "node": "Xem lịch sử?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sửa chữ hay ảnh?": {
+      "main": [
+        [
+          {
+            "node": "Viết lại (model rẻ)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ý tưởng ảnh (model rẻ)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Viết lại (model rẻ)": {
+      "main": [
+        [
+          {
+            "node": "Đọc bài sửa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Viết lại (model xịn)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc bài sửa": {
+      "main": [
+        [
+          {
+            "node": "Kiểm tra yêu cầu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cập nhật chữ": {
+      "main": [
+        [
+          {
+            "node": "Có ảnh bài?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin sửa chữ": {
+      "main": [
+        [
+          {
+            "node": "Gửi bài đã sửa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ý tưởng ảnh (model rẻ)": {
+      "main": [
+        [
+          {
+            "node": "Chuẩn bị ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ý tưởng ảnh (dự phòng)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ý tưởng ảnh (dự phòng)": {
+      "main": [
+        [
+          {
+            "node": "Chuẩn bị ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chuẩn bị ảnh": {
+      "main": [
+        [
+          {
+            "node": "Tạo ảnh (model rẻ)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tạo ảnh (model rẻ)": {
+      "main": [
+        [
+          {
+            "node": "Có ảnh chưa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có ảnh chưa?": {
+      "main": [
+        [
+          {
+            "node": "Kiểm tra ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tạo ảnh (dự phòng)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tạo ảnh (dự phòng)": {
+      "main": [
+        [
+          {
+            "node": "Lấy file ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy file ảnh": {
+      "main": [
+        [
+          {
+            "node": "Ghép logo và footer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghép logo và footer": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh lên Trang (ẩn)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh lên Trang (ẩn)": {
+      "main": [
+        [
+          {
+            "node": "Lấy link ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy link ảnh": {
+      "main": [
+        [
+          {
+            "node": "Tạo cập nhật ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tạo cập nhật ảnh": {
+      "main": [
+        [
+          {
+            "node": "Lưu bản cũ (ảnh)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cập nhật ảnh": {
+      "main": [
+        [
+          {
+            "node": "Ảnh cho Zalo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ảnh cho Zalo": {
+      "main": [
+        [
+          {
+            "node": "Zalo: tải ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zalo: tải ảnh": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin ảnh": {
+      "main": [
+        [
+          {
+            "node": "Gửi ảnh mới",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kiểm tra yêu cầu": {
+      "main": [
+        [
+          {
+            "node": "Đạt yêu cầu?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đạt yêu cầu?": {
+      "main": [
+        [
+          {
+            "node": "Bản cuối",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Viết lại (model xịn)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Viết lại (model xịn)": {
+      "main": [
+        [
+          {
+            "node": "Đọc bài sửa (model xịn)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Viết lại (dự phòng)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc bài sửa (model xịn)": {
+      "main": [
+        [
+          {
+            "node": "Bản cuối",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bản cuối": {
+      "main": [
+        [
+          {
+            "node": "Lưu bản cũ (chữ)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kiểm tra ảnh": {
+      "main": [
+        [
+          {
+            "node": "Ảnh ổn?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ảnh ổn?": {
+      "main": [
+        [
+          {
+            "node": "Lấy file ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tạo ảnh (dự phòng)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc lịch sử": {
+      "main": [
+        [
+          {
+            "node": "Kiểm tra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lưu bản cũ (chữ)": {
+      "main": [
+        [
+          {
+            "node": "Cập nhật chữ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lưu bản cũ (ảnh)": {
+      "main": [
+        [
+          {
+            "node": "Đổi bìa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hoàn tác?": {
+      "main": [
+        [
+          {
+            "node": "Lưu bản đang dùng",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sửa chữ hay ảnh?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Khôi phục": {
+      "main": [
+        [
+          {
+            "node": "Ảnh khôi phục?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ảnh khôi phục?": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh cũ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Soạn tin hoàn tác",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh cũ": {
+      "main": [
+        [
+          {
+            "node": "Zalo: tải ảnh cũ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zalo: tải ảnh cũ": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin hoàn tác",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin hoàn tác": {
+      "main": [
+        [
+          {
+            "node": "Gửi tin hoàn tác",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lưu bản đang dùng": {
+      "main": [
+        [
+          {
+            "node": "Khôi phục",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Xem lịch sử?": {
+      "main": [
+        [
+          {
+            "node": "Danh sách ảnh cũ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hoàn tác?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Danh sách ảnh cũ": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh bản cũ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh bản cũ": {
+      "main": [
+        [
+          {
+            "node": "Zalo: tải ảnh bản cũ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zalo: tải ảnh bản cũ": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin lịch sử",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin lịch sử": {
+      "main": [
+        [
+          {
+            "node": "Gửi tin lịch sử",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Viết lại (dự phòng)": {
+      "main": [
+        [
+          {
+            "node": "Đọc bài sửa (model xịn)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đổi bìa?": {
+      "main": [
+        [
+          {
+            "node": "Lưu bìa cũ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cập nhật ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lưu bìa cũ": {
+      "main": [
+        [
+          {
+            "node": "Cập nhật ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có ảnh bài?": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh bài (sửa)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Soạn tin sửa chữ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh bài (sửa)": {
+      "main": [
+        [
+          {
+            "node": "Zalo: tải ảnh bài (sửa)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zalo: tải ảnh bài (sửa)": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin sửa chữ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "tags": []
+}

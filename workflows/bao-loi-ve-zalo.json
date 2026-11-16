@@ -1,0 +1,140 @@
+{
+  "name": "Báo lỗi về Zalo",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "e1000000-0000-4000-8000-000000000001",
+      "name": "Khi workflow lỗi"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Soạn tin báo lỗi gửi vào nhóm Zalo\nconst d = $input.first().json;\nconst wfName = (d.workflow && d.workflow.name) || 'không rõ';\nconst ex = d.execution || {};\nconst err = ex.error || (d.trigger && d.trigger.error) || {};\nconst node = ex.lastNodeExecuted || (err.node && err.node.name) || 'không rõ';\nconst msg = String(err.message || err.description || 'không rõ').replace(/\\s+/g, ' ').slice(0, 300);\nconst now = DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm');\nconst text = `⚠️ HỆ THỐNG BÁO LỖI (${now})\\nWorkflow: ${wfName}\\nNode lỗi: ${node}\\nLỗi: ${msg}`\n  + (ex.id ? `\\nLần chạy: #${ex.id}` : '')\n  + `\\n👉 Người phụ trách mở n8n → workflow trên → tab Executions để xem chi tiết.`;\nreturn [{ json: { text } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "e1000000-0000-4000-8000-000000000002",
+      "name": "Soạn tin lỗi"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "oa_id",
+              "keyValue": "<ZALO_OA_ID>"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        0
+      ],
+      "id": "e1000000-0000-4000-8000-000000000003",
+      "name": "Lấy token Zalo",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: '<ZALO_GROUP_ID>' }, message: { text: $('Soạn tin lỗi').first().json.text } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "e1000000-0000-4000-8000-000000000004",
+      "name": "Gửi vào nhóm"
+    },
+    {
+      "parameters": {
+        "content": "## Báo lỗi về nhóm Zalo\nKhi bất kỳ workflow nào của hệ thống (AI viết bài, Duyệt, Sửa, Tự động đăng, bot GMF, Token, Ads Image) **bị lỗi dừng giữa chừng**, n8n gọi workflow này: gửi tên workflow, node lỗi, nội dung lỗi và số lần chạy vào nhóm Zalo.\nĐược gắn ở **Settings → Error workflow** của từng workflow.",
+        "height": 390,
+        "width": 900,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -220
+      ],
+      "id": "e1000000-0000-4000-8000-000000000005",
+      "name": "📌 Báo lỗi"
+    }
+  ],
+  "connections": {
+    "Khi workflow lỗi": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin lỗi": {
+      "main": [
+        [
+          {
+            "node": "Lấy token Zalo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy token Zalo": {
+      "main": [
+        [
+          {
+            "node": "Gửi vào nhóm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "tags": []
+}

@@ -1,0 +1,2653 @@
+{
+  "name": "Zalo OA - Group Content Bot (GMF)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000001",
+      "name": "Zalo Events",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Chỉ xử lý link TikTok/YouTube thành viên gửi trong nhóm OA (GMF); chat 1-1 với OA để dành cho khách\n// và tin OA tự gửi vào nhóm (oa_send_group_*) bị bỏ qua để không tự trả lời chính mình\nconst out = [];\nconst TA_RX = /^\\/(themanh|thêmảnh|them_anh|thêm_ảnh)\\s*#?\\s*(\\d+)\\b(?:\\s+(fb|face|facebook|zalo|oa)\\b)?/i;\nconst DT_RX = /^\\/(datanh|đặtảnh|dat_anh|đặt_ảnh|doianh|đổiảnh|bothaanh)\\s*#?\\s*(\\d+)\\b/i;\nconst KENH = (s) => /^(fb|face|facebook)$/i.test(s || '') ? 'fb' : /^(zalo|oa)$/i.test(s || '') ? 'zalo' : '';\n// Ảnh chờ 15 phút lưu trong Data Table \"anh_cho_zalo\" (mỗi ảnh 1 dòng; gửi nhiều ảnh cùng lúc không bị ghi đè).\n// Lệnh cần ảnh chờ -> canCho: true; node \"Gộp ảnh chờ\" ghép ảnh chờ vào lệnh rồi xóa.\nfor (const item of $input.all()) {\n  const e = item.json.body || {};\n  // Ảnh gửi vào nhóm: ghi chú \"/dunganh <số>\" -> dùng ảnh này cho bài; không có lệnh -> nhớ ảnh 15 phút để gõ /dunganh sau\n  const DA_RX = /^\\/(dunganh|dùngảnh|dung_anh|dùng_ảnh|anhtay|ảnhtay|anh_tay|ảnh_tay)\\s*#?\\s*(\\d+)\\b(?:\\s+(fb|face|facebook|zalo|oa)\\b)?/i;\n  if (e.event_name === 'user_send_group_image' || e.event_name === 'user_send_group_file') {\n    // ảnh thường, hoặc FILE ảnh gốc (png/jpg/webp, không bị Zalo nén) gửi bằng nút đính kèm tệp\n    const atts = (e.message?.attachments || []).filter(x => x.type === 'image' || /\\.(png|jpe?g|webp)$/i.test(String(x.payload?.name || x.payload?.url || '')));\n    const urls = atts.map(x => x.payload?.url).filter(Boolean);\n    const url = urls[urls.length - 1] || '';\n    const dti = (e.message?.text || '').trim().match(DT_RX);\n    if (dti && urls.length) {\n      out.push({ json: { route: 'datanh', canCho: true, id: dti[2], urls, user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n    const tam = (e.message?.text || '').trim().match(TA_RX);\n    if (tam && urls.length) {\n      out.push({ json: { route: 'themanh', canCho: true, id: tam[2], kenh: KENH(tam[3]), urls, user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n    const dm = (e.message?.text || '').trim().match(DA_RX);\n    const bmi = String(e.message?.text || '').replace(/^\\s+/, '').match(/^\\/(baimoi|bàimới|bai_moi|bài_mới|nhapbai|nhậpbài|nhap_bai)\\b([\\s\\S]*)$/i);\n    if (bmi && url) { out.push({ json: { route: 'baimoi', canCho: true, noidung: (bmi[2] || '').trim(), url, urls, user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n    const tdi = (e.message?.text || '').trim().match(/^\\/(tieude|tiêuđề|tieu_de)\\b\\s*([\\s\\S]*)$/i);\n    if (tdi && url) { out.push({ json: { route: 'tieude', title: tdi[2].trim(), url, user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n    if (dm && url) out.push({ json: { route: 'dunganh', id: dm[2], kenh: KENH(dm[3]), url, user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } });\n    else if (url) urls.forEach((u, i) => out.push({ json: { route: 'luuanh', user_id: String(e.sender?.id || ''), url: u, ts: (Number(e.timestamp) || Date.now()) * 10 + i, group_id: e.recipient?.id } }));\n    continue;\n  }\n  if (!['user_send_group_text', 'user_send_group_link'].includes(e.event_name)) continue;\n  // Lệnh /datanh <số>: thay CẢ BỘ ảnh bằng các ảnh gửi trong 15 phút (workflow Đặt bộ ảnh)\n  const dt = (e.message?.text || '').trim().match(DT_RX);\n  if (dt) {\n    out.push({ json: { route: 'datanh', canCho: true, id: dt[2], urls: [], user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n  const tam = (e.message?.text || '').trim().match(TA_RX);\n  if (tam) {\n    out.push({ json: { route: 'themanh', canCho: true, id: tam[2], kenh: KENH(tam[3]), urls: [], user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n  // Lệnh /baimoi + xuống dòng + bài tự viết (cùng 1 tin): nhập bài thành dòng Chờ duyệt, KHÔNG qua AI; ảnh gửi trước 15 phút thì dùng làm ảnh bài\n  const bm = String(e.message?.text || '').replace(/^\\s+/, '').match(/^\\/(baimoi|bàimới|bai_moi|bài_mới|nhapbai|nhậpbài|nhap_bai)\\b([\\s\\S]*)$/i);\n  if (bm) {\n    out.push({ json: { route: 'baimoi', canCho: true, noidung: (bm[2] || '').trim(), url: '', urls: [], user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n  // /xemtruoc <số> [giờ]: đăng ẨN để xem trước; /congkhai <số> [giờ|huy]: công khai bản ẩn (workflow Xem trước & công khai)\n  const xt = (e.message?.text || '').trim().match(/^\\/(xemtruoc|xemtrước|xem_truoc|xem_trước|dangan|đăngẩn|dang_an)\\s*#?\\s*(\\d+)\\b\\s*([\\s\\S]*)$/i);\n  if (xt) { out.push({ json: { route: 'xemtruoc', id: xt[2], gio: (xt[3] || '').trim(), user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n  const ck = (e.message?.text || '').trim().match(/^\\/(congkhai|côngkhai|cong_khai|công_khai|public)\\s*#?\\s*(\\d+)\\b\\s*([\\s\\S]*)$/i);\n  if (ck) { out.push({ json: { route: 'congkhai', id: ck[2], gio: (ck[3] || '').trim(), user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n  // /xemanh <số>: xem cả bộ ảnh của bài (ảnh lưới đánh số) – workflow Thêm ảnh cho bài\n  const xem = (e.message?.text || '').trim().match(/^\\/(xemanh|xemảnh|xem_anh|xem_ảnh|boanh|bộảnh|dsanh)\\s*#?\\s*(\\d+)\\s*$/i);\n  if (xem) { out.push({ json: { route: 'xemanh', id: xem[2], user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n  // /xepanh <số> <thứ tự mới>: đổi thứ tự ảnh (workflow Thêm ảnh cho bài)\n  const xp = (e.message?.text || '').trim().match(/^\\/(xepanh|xếpảnh|xep_anh|xếp_ảnh|thutuanh|doithutu)\\s*#?\\s*(\\d+)\\b\\s*([\\s\\S]*)$/i);\n  if (xp) { out.push({ json: { route: 'xepanh', id: xp[2], arg: (xp[3] || '').trim(), user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n  const xa = (e.message?.text || '').trim().match(/^\\/(xoaanh|xóaảnh|xoa_anh|xóa_ảnh|boanh|bỏảnh)\\s*#?\\s*(\\d+)\\b\\s*([\\s\\S]*)$/i);\n  if (xa) { out.push({ json: { route: 'xoaanh', id: xa[2], arg: (xa[3] || '').trim(), user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n  const da = (e.message?.text || '').trim().match(DA_RX);\n  if (da) {\n    out.push({ json: { route: 'dunganh', canCho: true, id: da[2], kenh: KENH(da[3]), url: '', user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } });\n    continue;\n  }\n  // Lệnh /tieude <tiêu đề> (viết bài ngay theo tiêu đề) và /dstieude (xem tiêu đề đang chờ) chuyển sang workflow AI viết bài\n  const td = (e.message?.text || '').trim().match(/^\\/(tieude|tiêuđề|tieu_de)\\b\\s*([\\s\\S]*)$/i);\n  if (td) {\n    // vừa gửi ảnh/file ảnh trong 15 phút -> dùng luôn ảnh đó cho bài\n    out.push({ json: { route: 'tieude', canCho: true, title: td[2].trim(), user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } });\n    continue;\n  }\n  if (/^\\/(dstieude|dstiêuđề|ds_tieude)\\s*$/i.test((e.message?.text || '').trim())) {\n    out.push({ json: { route: 'dstieude', user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } });\n    continue;\n  }\n  // Lệnh /choduyet: xem danh sách bài chờ duyệt / chờ đăng (workflow Duyệt bài)\n  if (/^\\/(choduyet|chờduyệt|cho_duyet|chờ_duyệt|dsduyet|dsbai)\\s*$/i.test((e.message?.text || '').trim())) {\n    out.push({ json: { route: 'duyet', action: 'list', id: '0', user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } });\n    continue;\n  }\n  // Lệnh /anhbia <số> [yêu cầu]: tạo lại ảnh bìa ngang 16:9 cho Zalo OA (workflow Tạo ảnh bìa Zalo OA)\n  const ab = (e.message?.text || '').trim().match(/^\\/(anhbia|ảnhbìa|anh_bia|ảnh_bìa|anhbìa)\\s*#?\\s*(\\d+)\\b\\s*([\\s\\S]*)$/i);\n  if (ab) {\n    out.push({ json: { route: 'anhbia', nguon: 'anhbia', id: ab[2], request: (ab[3] || '').trim(), user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } });\n    continue;\n  }\n  // Lệnh /xem <số> chu|anh <số bản>: gửi toàn văn / ảnh của 1 bản cũ để đọc (workflow Sửa bài từ Zalo)\n  const xm = (e.message?.text || '').trim().match(/^\\/(xem)\\s*#?\\s*(\\d+)\\s*((?:ảnh\\s*bìa|anh\\s*bia|anh_bia|ảnh_bìa|bìa|bia|chu|chữ|anh|ảnh)?\\s*\\d*)\\s*$/i);\n  if (xm) {\n    out.push({ json: { route: 'xem', id: xm[2], request: (xm[3] || '').trim(), user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } });\n    continue;\n  }\n  // Lệnh /lichsu <số> [chu|anh]: xem các bản chữ/ảnh đã có của bài (workflow Sửa bài từ Zalo)\n  const ls = (e.message?.text || '').trim().match(/^\\/(lichsu|lịchsử|lich_su|lịch_sử|history)\\s*#?\\s*(\\d+)\\s*(ảnh\\s*bìa|anh\\s*bia|anh_bia|ảnh_bìa|bìa|bia|chu|chữ|anh|ảnh)?\\s*$/i);\n  if (ls) {\n    out.push({ json: { route: 'lichsu', id: ls[2], request: ls[3] || '', user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } });\n    continue;\n  }\n  // Lệnh /dungbai <số> + xuống dòng + bài tự viết (cùng 1 tin): thay toàn bộ chữ (workflow Sửa bài từ Zalo)\n  const db = String(e.message?.text || '').replace(/^\\s+/, '').match(/^\\/(dungbai|dùngbài|dung_bai|dùng_bài|baicuatoi)\\s*#?\\s*(\\d+)\\b([\\s\\S]*)$/i);\n  if (db) { out.push({ json: { route: 'dungbai', id: db[2], request: (db[3] || '').trim(), user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n  // Lệnh /hoantac <số>: quay lại bản trước lần sửa gần nhất (workflow Sửa bài từ Zalo)\n  const ht = (e.message?.text || '').trim().match(/^\\/(hoantac|hoàntác|hoan_tac|hoàn_tác|undo|quaylai|quaylại)\\s*#?\\s*(\\d+)\\s*((?:ảnh\\s*bìa|anh\\s*bia|anh_bia|ảnh_bìa|bìa|bia|chu|chữ|anh|ảnh)?\\s*\\d*)\\s*$/i);\n  if (ht) {\n    out.push({ json: { route: 'hoantac', id: ht[2], request: (ht[3] || '').trim(), user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } });\n    continue;\n  }\n  // Lệnh /sua <số> <yêu cầu> (AI sửa chữ) và /anh <số> [yêu cầu] (tạo lại ảnh) chuyển sang workflow Sửa bài từ Zalo\n  const sua = (e.message?.text || '').trim().match(/^\\/(sua|sửa)\\s*#?\\s*(\\d+)\\b\\s*([\\s\\S]*)$/i);\n  const anh = (e.message?.text || '').trim().match(/^\\/(anh|ảnh)\\s*#?\\s*(\\d+)\\b\\s*([\\s\\S]*)$/i);\n  if (sua || anh) {\n    const m = sua || anh;\n    out.push({ json: { route: sua ? 'sua' : 'anh', id: m[2], request: m[3].trim(), user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } });\n    continue;\n  }\n  // Lệnh /duyet <số> hoặc /bo <số> chuyển sang workflow Duyệt bài từ Zalo\n  // /hengio <số> <giờ> [ngày] | huy: đặt / bỏ giờ đăng riêng cho bài (workflow Duyệt bài)\n  const hg = (e.message?.text || '').trim().match(/^\\/(hengio|hẹngiờ|hen_gio|hẹn_giờ|dangluc|đănglúc)\\s*#?\\s*(\\d+)\\b\\s*([\\s\\S]*)$/i);\n  if (hg) { out.push({ json: { route: 'duyet', action: 'hengio', id: hg[2], gio: (hg[3] || '').trim(), user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } }); continue; }\n  const dv = (e.message?.text || '').trim().match(/^\\/(duyet|duyệt|bo|bỏ)\\s*#?\\s*(\\d+)\\b\\s*([\\s\\S]*)$/i);\n  if (dv) {\n    out.push({ json: { route: 'duyet', action: /^d/i.test(dv[1]) ? 'duyet' : 'bo', id: dv[2], gio: /^b/i.test(dv[1]) ? '' : (dv[3] || '').trim(), user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id } });\n    continue;\n  }\n  // Lệnh /ads <mô tả> chuyển sang workflow Zalo OA - Ads Image\n  const ads = (e.message?.text || '').trim().match(/^\\/ads\\b\\s*([\\s\\S]*)$/i);\n  if (ads) {\n    out.push({ json: { route: 'ads', user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id, brief: ads[1].trim() } });\n    continue;\n  }\n  const text = [e.message?.text, ...(e.message?.attachments || []).map((a) => a.payload?.url)]\n    .filter(Boolean)\n    .join(' ');\n  let url = (text.match(/https?:\\/\\/\\S+/) || [])[0];\n  if (!url) continue;\n  let platform = null;\n  if (/tiktok\\.com/i.test(url)) platform = 'tiktok';\n  else if (/youtube\\.com|youtu\\.be/i.test(url)) platform = 'youtube';\n  if (!platform) continue;\n  // Đưa mọi dạng link YouTube (shorts, youtu.be, live, embed) về watch?v=ID\n  if (platform === 'youtube') {\n    const id = (url.match(/(?:v=|youtu\\.be\\/|shorts\\/|live\\/|embed\\/)([\\w-]{11})/) || [])[1];\n    if (!id) continue;\n    url = `https://www.youtube.com/watch?v=${id}`;\n  }\n  // Sự kiện nhóm: recipient.id là group_id, oa_id nằm ở cấp ngoài\n  out.push({ json: { route: 'content', user_id: e.sender?.id, group_id: e.recipient?.id, oa_id: e.oa_id, msg_id: e.message?.msg_id, url, platform } });\n}\nreturn out;"
+      },
+      "id": "b0000000-0000-4000-8000-000000000002",
+      "name": "Parse Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "r1",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "ads",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000018",
+      "name": "Is Ads?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2152,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "aHgElGGg3UqjZomu"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000019",
+      "name": "Run Ads",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        2152,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "oa_id",
+              "keyValue": "={{ $json.oa_id }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "b0000000-0000-4000-8000-000000000003",
+      "name": "Get Zalo Token",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2568,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Parse Event').item.json.group_id }, message: { text: '⏳ Đã nhận link, đang tạo nội dung. Vui lòng chờ khoảng 1 phút...' } }) }}",
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000004",
+      "name": "Send Ack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2776,
+        400
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://api.supadata.ai/v1/transcript",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $('Parse Event').item.json.url }}"
+            },
+            {
+              "name": "text",
+              "value": "true"
+            },
+            {
+              "name": "mode",
+              "value": "auto"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000006",
+      "name": "Get Transcript",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3048,
+        352
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "GOSTECH Khương - Supadata API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "j1",
+              "leftValue": "={{ $json.jobId || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000007",
+      "name": "Is Async Job?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3256,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "id": "b0000000-0000-4000-8000-000000000008",
+      "name": "Wait 10s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3256,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.supadata.ai/v1/transcript/' + $('Get Transcript').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000009",
+      "name": "Poll Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3480,
+        560
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "GOSTECH Khương - Supadata API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "s1",
+              "leftValue": "={{ ['queued', 'active'].includes($json.status) && $runIndex < 30 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000016",
+      "name": "Still Running?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3704,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "h1",
+              "leftValue": "={{ (typeof $json.content === 'string' ? $json.content : '').trim().length }}",
+              "rightValue": 30,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000010",
+      "name": "Has Transcript?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3928,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Transcript: {{ $json.content }}\n\nTạo nội dung từ transcript ở trên tuân thủ các yêu cầu sau:\n1. Viết lại nội dung ở dạng concept danh sách/con số (ví dụ: 10 công cụ AI giúp bạn tạo ra AI Agent tốt nhất hiện tại).\n2. Đi thẳng vào trọng tâm nội dung, không rườm rà\n3. Nội dung thực chiến và có tính ứng dụng cao. CHỈ dùng những ý có trong transcript, không thêm ý nằm ngoài video. Chọn 10 đến 15 ý giá trị nhất, gộp các ý trùng nhau.\n4. Viết 100% bằng tiếng Việt. Dịch mọi từ tiếng Anh sang tiếng Việt, chỉ giữ nguyên tên riêng (Facebook, TikTok, Google...).\n5. Viết giống như 1 chuyên gia số 1 trong ngành, không được viết giống như AI hay văn mẫu\n6. Đi thẳng vào tiêu đề luôn ngay lập tức. Không cần phải dẫn dắt. Không có \"tuyệt vời\" gì hết\n7. Tuyệt đối không sử dụng bất kỳ ký tự nào như dấu sao (*), dấu sao kép (**) hoặc dấu thăng (#) trong toàn bộ nội dung. Nếu cần làm nổi bật, hãy dùng chữ hoa hoặc viết thường bình thường. Nội dung không được có * hoặc # ở bất kỳ đâu, kể cả đầu dòng, tiêu đề hoặc định dạng. Đây là yêu cầu quan trọng nhất và bắt buộc phải làm theo. IMPORTANT: Do not use asterisks (*), markdown, or any special symbols for formatting. Return plain text only, no emphasis or styling.\n8. Không cho yếu tố năm (year) vào tiêu đề. Ví dụ: \"10 BÍ QUYẾT CHINH PHỤC FACEBOOK ADS 2025\" => Hãy sửa thành \"3 BÍ QUYẾT CHINH PHỤC FACEBOOK ADS\". This is a mandatory request\n9. Không được phép giới thiệu rườm rà. Dưới mỗi đề mục diễn giải thêm khoảng 3-4 dòng. Bài mẫu dưới đây CHỈ để tham khảo ĐỊNH DẠNG (tiêu đề viết hoa, đánh số, mỗi mục 3-4 dòng). TUYỆT ĐỐI KHÔNG dùng lại bất kỳ ý hay câu chữ nào của bài mẫu:\n\n\"22 KINH NGHIỆM XƯƠNG MÁU SAU 10 NĂM LÀM MARKETING ONLINE\n\n1. Quảng cáo Facebook hiệu quả chỉ cần tập trung vào 3 yếu tố\nSản phẩm – Content – Offer. Các yếu tố kỹ thuật hay thủ thuật khác không quá quan trọng đâu. Đừng nghe người khác thần thánh hoá quá để rồi bị lú\n\n2. Xây kênh TikTok không cần phải đi tương tác, follow kênh khác\nĐiều duy nhất TikTok quan tâm là tương tác đổ về video (chia sẻ, lưu, comment). Vì vậy tập trung vào nội dung và Hook để hút sự chú ý và kêu gọi người dùng tương tác là quan trọng nhất. Không cần mất công follow, tương tác đúng tệp làm gì cả\n\n3. Muốn tiết kiệm chi phí và tối ưu lợi nhuận cần dùng Organic traffic\nTuy nhiên nếu như bạn muốn nhân x10–20 lần thu nhập thì phải có quảng cáo và hệ thống chuyển đổi. Free traffic vẫn giúp bạn kiếm được tiền nhưng mất công và có thể chậm hơn rất nhiều\n\n4. Thương hiệu cá nhân là tài sản bền vững nhưng không giúp bạn kiếm tiền nhanh\nXây dựng thương hiệu cá nhân cần thời gian và công sức dài hạn. Vì thế đừng có mong nó nhanh chóng giúp bạn ra tiền như các chuyên gia nói. Hãy kiên trì và bền bỉ. Nhưng nếu muốn kiếm tiền nhanh. Bạn cần công thức khác\n\n5. Người mới đừng vội tập trung xây thương hiệu cá nhân\nHãy tập trung sản xuất nội dung mang giá trị cho tệp người xem.\n\n6. Video ngắn giúp viral nhưng video dài xây niềm tin và bán sản phẩm cao cấp\nKết hợp livestream, webinar để tăng chuyển đổi và xây dựng lòng tin.\n\n7. Công thức \"đúng đủ đều\" đã lỗi thời\nHiện nay cần phải sáng tạo, khác biệt và tập trung vào giá trị nội dung.\n\n8. Khách hàng mua hàng vì yêu thích và tin tưởng con người bạn\nCác founder cần xuất hiện online, không nên núp sau hệ thống.\n\n9. Đa số khách hàng không mua ở lần đầu tiên\nCần xây hệ thống giáo dục và chuyển đổi khách hàng thay vì chỉ chạy quảng cáo.\n\n10. Xây kênh bán hàng nên tập trung xây cộng đồng chứ không chạy theo view/follow\nTập trung thu hút nhóm người thực sự có vấn đề và nỗi đau.\n\n11. Bỏ tư duy kỹ thuật, tập trung vào chân dung khách hàng và mong muốn thực sự của họ\nMang giá trị liên tục trong nhiều năm sẽ tạo ra kết quả lớn.\n\n12. Facebook hay TikTok kiếm tiền tốt hơn phụ thuộc vào năng lực của bạn\nChọn kênh phù hợp với nguồn lực cá nhân thay vì nghe người khác.\n\n13. Nếu mất kênh social, bạn còn lại gì?\nBắt đầu xây dựng cộng đồng riêng, sở hữu nguồn traffic của mình.\n\n14. Thumbnail là yếu tố cực kỳ quan trọng để phát triển kênh YouTube\nKhông còn là chi tiết nhỏ mà là thứ bắt buộc phải tối ưu.\n\n15. Khi có content chuyển đổi cao, hãy đầu tư thật nhiều tiền quảng cáo vào đó\nSẽ thu về doanh số gấp nhiều lần chi phí quảng cáo.\n\n16. Đừng viết kịch bản nội dung quá nhiều, hãy ưu tiên nội dung chân thật\nTập trung vào documenting, Q&A, cắt từ livestream hoặc Daily Vlog.\n\n17. Từ một ý tưởng, hãy triển khai thành 4 dạng content\nContent Headshot, Kể chuyện, Video minh họa, và Content ảnh.\n\n18. Quảng cáo Facebook cần lưu ý độ tuổi, máy học và tránh cạnh tranh nội bộ\nĐừng để tuổi quá rộng, ngân sách quá thấp hoặc nhân nhóm bừa bãi.\n\n19. Nếu đã thành thạo quảng cáo ở một kênh, có thể tự học kênh khác\nKhông cần tốn thời gian và tiền bạc học quảng cáo từ đầu.\n\n20. Tận dụng tâm lý thích phim dài tập, hãy tạo chuỗi video series\nDạng truyền thông phân mảnh giúp khách hàng tò mò và muốn xem tiếp.\n\n21. SEO vẫn luôn hiệu quả nhưng cần thời gian dài để thấy kết quả\nHãy bắt đầu chú trọng SEO ngay từ bây giờ.\n\n22. Khi mới phát triển kênh, đừng vội bán hàng\nHãy phủ sóng, tạo sự yêu mến trước – tiền bạc sẽ đến sau.\"",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Bạn là 1 chuyên gia Marketing, AI Automation, quảng cáo Facebook và xây kênh Tiktok thực chiến với kinh nghiệm hơn 10 năm. Hãy viết nội dung theo yêu cầu để tạo ra 1 content chia sẻ kiến thức đầy giá trị để đăng tải lên Facebook page từ đó đạt được mục tiêu Viral, tăng trưởng lượt Follow và mang về thật nhiều khách hàng tiềm năng.\n\n1. Cấu trúc luôn phải là tiêu đề sau đó đến các đề mục 1,2,3,4 ngay và luôn. không cần dẫn dắt giải thích rườm rà\n2. Tuyệt đối không sử dụng bất kỳ ký tự nào như dấu sao (*), dấu sao kép (**) hoặc dấu thăng (#) trong toàn bộ nội dung. Nếu cần làm nổi bật, hãy dùng chữ hoa hoặc viết thường bình thường. Nội dung không được có * hoặc # ở bất kỳ đâu, kể cả đầu dòng, tiêu đề hoặc định dạng. Đây là điều kiện quan trọng nhất và bắt buộc\n3. Tuyệt đối không giải thích diễn giải gì sau tiêu đề\n4. Content phải thực chiến, có tính ứng dụng cao, dễ dàng viral"
+            }
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.6,
+      "position": [
+        4200,
+        352
+      ],
+      "id": "b0000000-0000-4000-8000-000000000011",
+      "name": "Create Content",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Transcript: {{ $('Has Transcript?').first().json.content }}\n\nTạo nội dung từ transcript ở trên tuân thủ các yêu cầu sau:\n1. Viết lại nội dung ở dạng concept danh sách/con số (ví dụ: 10 công cụ AI giúp bạn tạo ra AI Agent tốt nhất hiện tại).\n2. Đi thẳng vào trọng tâm nội dung, không rườm rà\n3. Nội dung thực chiến và có tính ứng dụng cao. CHỈ dùng những ý có trong transcript, không thêm ý nằm ngoài video. Chọn 10 đến 15 ý giá trị nhất, gộp các ý trùng nhau.\n4. Viết 100% bằng tiếng Việt. Dịch mọi từ tiếng Anh sang tiếng Việt, chỉ giữ nguyên tên riêng (Facebook, TikTok, Google...).\n5. Viết giống như 1 chuyên gia số 1 trong ngành, không được viết giống như AI hay văn mẫu\n6. Đi thẳng vào tiêu đề luôn ngay lập tức. Không cần phải dẫn dắt. Không có \"tuyệt vời\" gì hết\n7. Tuyệt đối không sử dụng bất kỳ ký tự nào như dấu sao (*), dấu sao kép (**) hoặc dấu thăng (#) trong toàn bộ nội dung. Nếu cần làm nổi bật, hãy dùng chữ hoa hoặc viết thường bình thường. Nội dung không được có * hoặc # ở bất kỳ đâu, kể cả đầu dòng, tiêu đề hoặc định dạng. Đây là yêu cầu quan trọng nhất và bắt buộc phải làm theo. IMPORTANT: Do not use asterisks (*), markdown, or any special symbols for formatting. Return plain text only, no emphasis or styling.\n8. Không cho yếu tố năm (year) vào tiêu đề. Ví dụ: \"10 BÍ QUYẾT CHINH PHỤC FACEBOOK ADS 2025\" => Hãy sửa thành \"3 BÍ QUYẾT CHINH PHỤC FACEBOOK ADS\". This is a mandatory request\n9. Không được phép giới thiệu rườm rà. Dưới mỗi đề mục diễn giải thêm khoảng 3-4 dòng. Bài mẫu dưới đây CHỈ để tham khảo ĐỊNH DẠNG (tiêu đề viết hoa, đánh số, mỗi mục 3-4 dòng). TUYỆT ĐỐI KHÔNG dùng lại bất kỳ ý hay câu chữ nào của bài mẫu:\n\n\"22 KINH NGHIỆM XƯƠNG MÁU SAU 10 NĂM LÀM MARKETING ONLINE\n\n1. Quảng cáo Facebook hiệu quả chỉ cần tập trung vào 3 yếu tố\nSản phẩm – Content – Offer. Các yếu tố kỹ thuật hay thủ thuật khác không quá quan trọng đâu. Đừng nghe người khác thần thánh hoá quá để rồi bị lú\n\n2. Xây kênh TikTok không cần phải đi tương tác, follow kênh khác\nĐiều duy nhất TikTok quan tâm là tương tác đổ về video (chia sẻ, lưu, comment). Vì vậy tập trung vào nội dung và Hook để hút sự chú ý và kêu gọi người dùng tương tác là quan trọng nhất. Không cần mất công follow, tương tác đúng tệp làm gì cả\n\n3. Muốn tiết kiệm chi phí và tối ưu lợi nhuận cần dùng Organic traffic\nTuy nhiên nếu như bạn muốn nhân x10–20 lần thu nhập thì phải có quảng cáo và hệ thống chuyển đổi. Free traffic vẫn giúp bạn kiếm được tiền nhưng mất công và có thể chậm hơn rất nhiều\n\n4. Thương hiệu cá nhân là tài sản bền vững nhưng không giúp bạn kiếm tiền nhanh\nXây dựng thương hiệu cá nhân cần thời gian và công sức dài hạn. Vì thế đừng có mong nó nhanh chóng giúp bạn ra tiền như các chuyên gia nói. Hãy kiên trì và bền bỉ. Nhưng nếu muốn kiếm tiền nhanh. Bạn cần công thức khác\n\n5. Người mới đừng vội tập trung xây thương hiệu cá nhân\nHãy tập trung sản xuất nội dung mang giá trị cho tệp người xem.\n\n6. Video ngắn giúp viral nhưng video dài xây niềm tin và bán sản phẩm cao cấp\nKết hợp livestream, webinar để tăng chuyển đổi và xây dựng lòng tin.\n\n7. Công thức \"đúng đủ đều\" đã lỗi thời\nHiện nay cần phải sáng tạo, khác biệt và tập trung vào giá trị nội dung.\n\n8. Khách hàng mua hàng vì yêu thích và tin tưởng con người bạn\nCác founder cần xuất hiện online, không nên núp sau hệ thống.\n\n9. Đa số khách hàng không mua ở lần đầu tiên\nCần xây hệ thống giáo dục và chuyển đổi khách hàng thay vì chỉ chạy quảng cáo.\n\n10. Xây kênh bán hàng nên tập trung xây cộng đồng chứ không chạy theo view/follow\nTập trung thu hút nhóm người thực sự có vấn đề và nỗi đau.\n\n11. Bỏ tư duy kỹ thuật, tập trung vào chân dung khách hàng và mong muốn thực sự của họ\nMang giá trị liên tục trong nhiều năm sẽ tạo ra kết quả lớn.\n\n12. Facebook hay TikTok kiếm tiền tốt hơn phụ thuộc vào năng lực của bạn\nChọn kênh phù hợp với nguồn lực cá nhân thay vì nghe người khác.\n\n13. Nếu mất kênh social, bạn còn lại gì?\nBắt đầu xây dựng cộng đồng riêng, sở hữu nguồn traffic của mình.\n\n14. Thumbnail là yếu tố cực kỳ quan trọng để phát triển kênh YouTube\nKhông còn là chi tiết nhỏ mà là thứ bắt buộc phải tối ưu.\n\n15. Khi có content chuyển đổi cao, hãy đầu tư thật nhiều tiền quảng cáo vào đó\nSẽ thu về doanh số gấp nhiều lần chi phí quảng cáo.\n\n16. Đừng viết kịch bản nội dung quá nhiều, hãy ưu tiên nội dung chân thật\nTập trung vào documenting, Q&A, cắt từ livestream hoặc Daily Vlog.\n\n17. Từ một ý tưởng, hãy triển khai thành 4 dạng content\nContent Headshot, Kể chuyện, Video minh họa, và Content ảnh.\n\n18. Quảng cáo Facebook cần lưu ý độ tuổi, máy học và tránh cạnh tranh nội bộ\nĐừng để tuổi quá rộng, ngân sách quá thấp hoặc nhân nhóm bừa bãi.\n\n19. Nếu đã thành thạo quảng cáo ở một kênh, có thể tự học kênh khác\nKhông cần tốn thời gian và tiền bạc học quảng cáo từ đầu.\n\n20. Tận dụng tâm lý thích phim dài tập, hãy tạo chuỗi video series\nDạng truyền thông phân mảnh giúp khách hàng tò mò và muốn xem tiếp.\n\n21. SEO vẫn luôn hiệu quả nhưng cần thời gian dài để thấy kết quả\nHãy bắt đầu chú trọng SEO ngay từ bây giờ.\n\n22. Khi mới phát triển kênh, đừng vội bán hàng\nHãy phủ sóng, tạo sự yêu mến trước – tiền bạc sẽ đến sau.\"",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Bạn là 1 chuyên gia Marketing, AI Automation, quảng cáo Facebook và xây kênh Tiktok thực chiến với kinh nghiệm hơn 10 năm. Hãy viết nội dung theo yêu cầu để tạo ra 1 content chia sẻ kiến thức đầy giá trị để đăng tải lên Facebook page từ đó đạt được mục tiêu Viral, tăng trưởng lượt Follow và mang về thật nhiều khách hàng tiềm năng.\n\n1. Cấu trúc luôn phải là tiêu đề sau đó đến các đề mục 1,2,3,4 ngay và luôn. không cần dẫn dắt giải thích rườm rà\n2. Tuyệt đối không sử dụng bất kỳ ký tự nào như dấu sao (*), dấu sao kép (**) hoặc dấu thăng (#) trong toàn bộ nội dung. Nếu cần làm nổi bật, hãy dùng chữ hoa hoặc viết thường bình thường. Nội dung không được có * hoặc # ở bất kỳ đâu, kể cả đầu dòng, tiêu đề hoặc định dạng. Đây là điều kiện quan trọng nhất và bắt buộc\n3. Tuyệt đối không giải thích diễn giải gì sau tiêu đề\n4. Content phải thực chiến, có tính ứng dụng cao, dễ dàng viral"
+            }
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.6,
+      "position": [
+        4504,
+        608
+      ],
+      "id": "b0000000-0000-4000-8000-000000000020",
+      "name": "Create Content Paid",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.8-flash",
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000021",
+      "name": "Gemini Model Paid",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        4504,
+        800
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api Gen Image"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000012",
+      "name": "Gemini Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        4200,
+        544
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gửi bài vào nhóm: đầu tin có số bài, cuối tin hướng dẫn thêm ảnh rồi duyệt. Zalo giới hạn ~2000 ký tự/tin\nconst b = $('Chuẩn bị dòng video').first().json;\nconst id = b.id;\nconst max = 1900;\nconst parts = [`📝 BÀI #${id} CHỜ DUYỆT (viết từ video)\\n🖼️ Bài CHƯA CÓ ẢNH, thêm ảnh rồi mới /duyet được.`];\nlet cur = '';\nfor (const para of String(b.noiDung).split(/\\n{2,}/)) {\n  const joined = cur ? cur + '\\n\\n' + para : para;\n  if (joined.length <= max) { cur = joined; continue; }\n  if (cur) parts.push(cur);\n  cur = '';\n  if (para.length <= max) { cur = para; continue; }\n  for (let i = 0; i < para.length; i += max) parts.push(para.slice(i, i + max));\n}\nif (cur) parts.push(cur);\nparts.push([\n  `🖼️ THÊM ẢNH CHO BÀI #${id}:`,\n  `• Ảnh tự thiết kế: gửi ảnh vào nhóm (kèm ghi chú \"/dunganh ${id}\" hoặc gõ \"/dunganh ${id}\" trong 15 phút). Ảnh vuông = ảnh bài, ảnh ngang = ảnh bìa Zalo OA`,\n  `• Cả bộ ảnh (vuông + ngang, Fanpage + Zalo): gửi hết ảnh rồi gõ \"/datanh ${id}\"`,\n  `• Thêm lẻ ảnh vào album: gửi ảnh rồi gõ \"/themanh ${id}\"`,\n  `• Ảnh bìa Zalo OA từ ảnh bài: \"/anhbia ${id}\"`,\n  `• Muốn AI vẽ ảnh: \"/anh ${id} <yêu cầu>\"`,\n  ``,\n  `✏️ \"/sua ${id} <yêu cầu>\" AI sửa chữ · 📝 \"/dungbai ${id}\" + xuống dòng dán bài tự viết`,\n  `👉 Đủ ảnh thì \"/duyet ${id} [giờ]\" để đăng, \"/bo ${id}\" để bỏ`,\n].join('\\n'));\nreturn parts.map((part, i) => ({ json: { part, index: i + 1 } }));\n"
+      },
+      "id": "b0000000-0000-4000-8000-000000000013",
+      "name": "Split Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5780,
+        352
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Get Zalo Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Parse Event').first().json.group_id }, message: { text: $json.part } }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000014",
+      "name": "Send Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6000,
+        352
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Get Zalo Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Parse Event').first().json.group_id }, message: { text: '❌ Không lấy được nội dung từ video này. Bạn thử lại sau hoặc gửi link video khác nhé.' } }) }}",
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000015",
+      "name": "Send Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3928,
+        784
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Get Zalo Token').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Parse Event').first().json.group_id }, message: { text: '❌ Hệ thống AI đang quá tải, chưa tạo được nội dung. Bạn vui lòng gửi lại link sau ít phút nhé.' } }) }}",
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000017",
+      "name": "Send AI Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4856,
+        624
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "## 1. Nhận tin trong nhóm & phân luồng\nChỉ nhận tin trong nhóm OA. Lệnh `/ads` → chuyển sang workflow **Zalo OA - Ads Image**. Link YouTube/TikTok → lấy token, báo \"đã nhận link\".\nLệnh `/tieude <tiêu đề>`, `/dstieude` → workflow **AI viết bài theo tiêu đề**.\nLệnh `/anhbia <số> [yêu cầu]` → workflow **Tạo ảnh bìa Zalo OA**.\nẢnh gửi kèm ghi chú `/dunganh <số>` (hoặc gõ sau khi gửi ảnh) → workflow **Dùng ảnh tự thiết kế**.\n`/themanh <số>`, `/xoaanh <số> <n|het>` → workflow **Thêm ảnh cho bài** (1 bài nhiều ảnh).",
+        "height": 1080,
+        "width": 1684,
+        "color": 5
+      },
+      "id": "b0000000-0000-4000-8000-000000000031",
+      "name": "Ghi chú 31",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 2. Lấy lời thoại video (Supadata)\nVideo dài thì Supadata trả mã chờ: đợi 10 giây rồi hỏi lại, tối đa ~5 phút. Không có lời thoại → báo lỗi vào nhóm.",
+        "height": 1080,
+        "width": 1140,
+        "color": 4
+      },
+      "id": "b0000000-0000-4000-8000-000000000032",
+      "name": "Ghi chú 32",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2984,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 3. Viết bài (Gemini)\nKey miễn phí trước (gemini-2.5-flash), hết lượt → **Create Content Paid** (key trả phí, gemini-3.8-flash).",
+        "height": 1080,
+        "width": 660,
+        "color": 6
+      },
+      "id": "b0000000-0000-4000-8000-000000000033",
+      "name": "Ghi chú 33",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        4136,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 4. Ghi bài vào Sheet & gửi nhóm duyệt\nBài viết từ video được ghi thành 1 dòng **Chờ duyệt** trên Sheet lịch đăng (ô vàng trống đầu tiên, hết ô vàng thì thêm dòng mới), **không tạo ảnh**. Gửi vào nhóm: số bài + nội dung (chia tin nếu dài quá 1900 ký tự) + hướng dẫn thêm ảnh (/dunganh, /themanh, /anhbia) rồi /duyet.",
+        "height": 1080,
+        "width": 1396,
+        "color": 3
+      },
+      "id": "b0000000-0000-4000-8000-000000000034",
+      "name": "Ghi chú 34",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        4824,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "rd1",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "duyet",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f0000000-0000-4000-8000-000000000001",
+      "name": "Is Duyệt?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1736,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "GIEfdFdfC23YhoxI"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "f0000000-0000-4000-8000-000000000002",
+      "name": "Run Duyệt",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1736,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "rs1",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "^(sua|anh|hoantac|lichsu|xem|dungbai)$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f0000000-0000-4000-8000-000000000003",
+      "name": "Is Sửa?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1944,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "JPy0CzMlKBYg0hGN"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "f0000000-0000-4000-8000-000000000004",
+      "name": "Run Sửa",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1944,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "rt1",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "^(tieude|dstieude)$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f0000000-0000-4000-8000-000000000005",
+      "name": "Is Tiêu đề?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2360,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "QkL9pnPctE5EJvgk"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "f0000000-0000-4000-8000-000000000006",
+      "name": "Run AI viết bài",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        2360,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d7000000-0000-4000-8000-000000000001-c",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "anhbia",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1944,
+        640
+      ],
+      "id": "d7000000-0000-4000-8000-000000000001",
+      "name": "Is Ảnh bìa?"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "6rE98DNf4P6rKzHb"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1944,
+        840
+      ],
+      "id": "d7000000-0000-4000-8000-000000000002",
+      "name": "Run Ảnh bìa"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "rda",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "dunganh",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2152,
+        640
+      ],
+      "id": "dc000000-0000-4000-8000-000000000001",
+      "name": "Is Dùng ảnh?"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "ub5IObZzwstWxYRt"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        2152,
+        840
+      ],
+      "id": "dc000000-0000-4000-8000-000000000002",
+      "name": "Run Dùng ảnh"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "rta",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "^(themanh|xoaanh|xepanh|xemanh)$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2360,
+        640
+      ],
+      "id": "e0000000-0000-4000-8000-0000000000a1",
+      "name": "Is Thêm ảnh?"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "qwZa8t48PEiJ6zAi"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        2360,
+        840
+      ],
+      "id": "e0000000-0000-4000-8000-0000000000a2",
+      "name": "Run Thêm ảnh"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        4880,
+        352
+      ],
+      "name": "Đọc lịch đăng (video)",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "id": "f2000000-0000-4000-8000-000000000001"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Bài viết từ link video -> 1 dòng mới trên Sheet lịch đăng, trạng thái Chờ duyệt, KHÔNG có ảnh (người phụ trách tự thêm ảnh)\nlet text = '';\ntry { text = $('Create Content Paid').first().json.text || ''; } catch (e) {}\nif (!text) { try { text = $('Create Content').first().json.text || ''; } catch (e) {} }\ntext = String(text).replace(/\\r/g, '').replace(/\\*\\*/g, '').replace(/^#+\\s*/gm, '').replace(/`/g, '').replace(/\\n{3,}/g, '\\n\\n').trim();\nif (!text) throw new Error('AI không trả nội dung bài');\nconst FOOTER = ['---***---', 'CÔNG TY TNHH GOSTECH', 'Giải pháp phát triển doanh nghiệp',\n  '📍 Trụ sở chính: Số nhà 11, ngõ 245/116/27 Phố Định Công, Phường Định Công, Hà Nội',\n  '📍 Văn phòng: Tòa A3 Vinhomes Hàm Nghi, Phường Từ Liêm, Hà Nội', '📞 Hotline: 0968 343 342',\n  '🌐 Website: gostech.vn | hocviendigital.vn'].join('\\n');\nconst noiDung = text + '\\n\\n' + FOOTER;\nconst tieuDe = (text.split('\\n').find(l => l.trim()) || '').trim().slice(0, 200);\nconst rows = $('Đọc lịch đăng (video)').all().map(i => i.json).filter(r => r && r.row_number);\nconst id = rows.reduce((m, r) => Math.max(m, Number(r['ID']) || 0), 0) + 1;\n// Ghi vào ô vàng trống đầu tiên (Chờ viết, chưa có tiêu đề/nội dung); hết ô vàng thì thêm dòng mới\nconst vang = rows.find(r => !String(r['Tiêu đề'] || '').trim() && !String(r['Nội dung'] || '').trim()\n  && String(r['Trạng thái'] || '').trim() === 'Chờ viết');\nconst ev = $('Parse Event').first().json;\nconst now = DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm');\nconst row = { 'ID': String(id), 'Tiêu đề': tieuDe, 'Nội dung': noiDung, 'Trạng thái': 'Chờ duyệt',\n  'Ghi chú': `AI viết từ video ${ev.platform || ''} ${now}: ${ev.url || ''} | chưa có ảnh` };\nreturn [{ json: { id, tieuDe, noiDung, coVang: !!vang, row_number: vang ? vang.row_number : null, row } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5100,
+        352
+      ],
+      "name": "Chuẩn bị dòng video",
+      "id": "f2000000-0000-4000-8000-000000000002"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "v1",
+              "leftValue": "={{ $json.coVang }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5320,
+        352
+      ],
+      "name": "Có ô vàng?",
+      "id": "f2000000-0000-4000-8000-000000000003"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Chuẩn bị dòng video').first().json.row_number }}",
+            "ID": "={{ $('Chuẩn bị dòng video').first().json.row['ID'] }}",
+            "Tiêu đề": "={{ $('Chuẩn bị dòng video').first().json.row['Tiêu đề'] }}",
+            "Nội dung": "={{ $('Chuẩn bị dòng video').first().json.row['Nội dung'] }}",
+            "Trạng thái": "={{ $('Chuẩn bị dòng video').first().json.row['Trạng thái'] }}",
+            "Ghi chú": "={{ $('Chuẩn bị dòng video').first().json.row['Ghi chú'] }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tiêu đề",
+              "displayName": "Tiêu đề",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nội dung",
+              "displayName": "Nội dung",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Trạng thái",
+              "displayName": "Trạng thái",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ghi chú",
+              "displayName": "Ghi chú",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        5540,
+        240
+      ],
+      "name": "Ghi vào ô vàng",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "id": "f2000000-0000-4000-8000-000000000004"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $('Chuẩn bị dòng video').first().json.row['ID'] }}",
+            "Tiêu đề": "={{ $('Chuẩn bị dòng video').first().json.row['Tiêu đề'] }}",
+            "Nội dung": "={{ $('Chuẩn bị dòng video').first().json.row['Nội dung'] }}",
+            "Trạng thái": "={{ $('Chuẩn bị dòng video').first().json.row['Trạng thái'] }}",
+            "Ghi chú": "={{ $('Chuẩn bị dòng video').first().json.row['Ghi chú'] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tiêu đề",
+              "displayName": "Tiêu đề",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nội dung",
+              "displayName": "Nội dung",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Trạng thái",
+              "displayName": "Trạng thái",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ghi chú",
+              "displayName": "Ghi chú",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        5540,
+        470
+      ],
+      "name": "Thêm dòng mới (video)",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "id": "f2000000-0000-4000-8000-000000000005"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Is Bài",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "baimoi",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2500,
+        560
+      ],
+      "name": "Is Bài mới?",
+      "id": "f2000000-0000-4000-8000-000000000030"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        2570,
+        1400
+      ],
+      "name": "Đọc lịch đăng (bài mới)",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "id": "f2000000-0000-4000-8000-000000000031"
+    },
+    {
+      "parameters": {
+        "jsCode": "// /baimoi + xuống dòng + bài tự viết: nhập nguyên văn (KHÔNG qua AI) thành 1 dòng Chờ duyệt trên Sheet\nconst ev = $('Is Bài mới?').first().json;\nconst FOOTER = ['---***---', 'CÔNG TY TNHH GOSTECH', 'Giải pháp phát triển doanh nghiệp',\n  '📍 Trụ sở chính: Số nhà 11, ngõ 245/116/27 Phố Định Công, Phường Định Công, Hà Nội',\n  '📍 Văn phòng: Tòa A3 Vinhomes Hàm Nghi, Phường Từ Liêm, Hà Nội', '📞 Hotline: 0968 343 342',\n  '🌐 Website: gostech.vn | hocviendigital.vn'].join('\\n');\nlet text = String(ev.noidung || '').replace(/\\r/g, '').split('---***---')[0]\n  .replace(/\\*\\*/g, '').replace(/`/g, '').replace(/[ \\t]+\\n/g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\nconst lines = text.split('\\n').filter(l => l.trim());\nconst base = { group_id: ev.group_id, oa_id: ev.oa_id, user_id: ev.user_id, url: ev.url || '', urls: (ev.urls && ev.urls.length ? ev.urls : (ev.url ? [ev.url] : [])) };\nif (lines.length < 2 || text.split(/\\s+/).length < 15) {\n  return [{ json: { ...base, ok: false, reply: 'ℹ️ Cách nhập bài tự viết (không qua AI), gõ trong CÙNG 1 tin:\\n/baimoi\\nTIÊU ĐỀ BÀI VIẾT\\nNội dung bài…\\n\\n(Dòng đầu là tiêu đề, phần dưới là nội dung, bài tối thiểu khoảng 15 chữ. Có thể gửi ảnh trước đó trong 15 phút hoặc gửi ảnh kèm ghi chú /baimoi để dùng làm ảnh bài.)' } }];\n}\nconst tieuDe = lines[0].trim().slice(0, 200);\nconst noiDung = text + '\\n\\n' + FOOTER;\nconst rows = $('Đọc lịch đăng (bài mới)').all().map(i => i.json).filter(r => r && r.row_number);\nconst id = rows.reduce((m, r) => Math.max(m, Number(r['ID']) || 0), 0) + 1;\nconst vang = rows.find(r => !String(r['Tiêu đề'] || '').trim() && !String(r['Nội dung'] || '').trim() && String(r['Trạng thái'] || '').trim() === 'Chờ viết');\nconst now = DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm');\nconst row = { 'ID': String(id), 'Tiêu đề': tieuDe, 'Nội dung': noiDung, 'Trạng thái': 'Chờ duyệt',\n  'Ghi chú': `Bài tự viết nhập qua Zalo ${now} (không qua AI)${base.url ? ` | ${base.urls.length} ảnh gửi kèm` : ' | chưa có ảnh'}` };\nconst soChu = text.split(/\\s+/).filter(Boolean).length;\nconst reply = [\n  `📝 BÀI #${id} ĐÃ NHẬP (bài tự viết, không qua AI) – Chờ duyệt`,\n  `Tiêu đề: ${tieuDe}`,\n  `(${soChu} chữ, đã gắn chữ ký GOSTECH)`,\n  '',\n  base.url ? `🖼️ Đang đặt ${base.urls.length} ảnh vừa gửi cho bài #${id} (vuông đầu = ảnh chính, ngang đầu = ảnh bìa Zalo OA + đầu album Fanpage)...` : `🖼️ Bài CHƯA CÓ ẢNH: gửi ảnh vào nhóm rồi gõ \"/dunganh ${id}\" (ảnh vuông = ảnh bài, ảnh ngang = ảnh bìa Zalo OA)`,\n  `🖼️ Cả bộ ảnh (vuông + ngang): gửi hết ảnh rồi \"/datanh ${id}\" · ➕ Thêm lẻ: \"/themanh ${id}\" · Bìa Zalo OA từ ảnh bài: \"/anhbia ${id}\"`,\n  `✏️ Sửa: \"/dungbai ${id}\" + bài mới · \"/sua ${id} <yêu cầu>\" (AI) · \"/xem ${id} chu 1\"`,\n  `👉 Đủ ảnh thì \"/duyet ${id} [giờ]\" để đăng, \"/bo ${id}\" để bỏ`,\n].join('\\n');\nreturn [{ json: { ...base, ok: true, id, coVang: !!vang, row_number: vang ? vang.row_number : null, row, reply } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2790,
+        1400
+      ],
+      "name": "Chuẩn bị bài mới",
+      "id": "f2000000-0000-4000-8000-000000000032"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Bài mớ",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3010,
+        1400
+      ],
+      "name": "Bài mới hợp lệ?",
+      "id": "f2000000-0000-4000-8000-000000000033"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Có ô v",
+              "leftValue": "={{ $json.coVang }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3230,
+        1300
+      ],
+      "name": "Có ô vàng? (bài mới)",
+      "id": "f2000000-0000-4000-8000-000000000034"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Chuẩn bị bài mới').first().json.row_number }}",
+            "ID": "={{ $('Chuẩn bị bài mới').first().json.row['ID'] }}",
+            "Tiêu đề": "={{ $('Chuẩn bị bài mới').first().json.row['Tiêu đề'] }}",
+            "Nội dung": "={{ $('Chuẩn bị bài mới').first().json.row['Nội dung'] }}",
+            "Trạng thái": "={{ $('Chuẩn bị bài mới').first().json.row['Trạng thái'] }}",
+            "Ghi chú": "={{ $('Chuẩn bị bài mới').first().json.row['Ghi chú'] }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tiêu đề",
+              "displayName": "Tiêu đề",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nội dung",
+              "displayName": "Nội dung",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Trạng thái",
+              "displayName": "Trạng thái",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ghi chú",
+              "displayName": "Ghi chú",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        3450,
+        1200
+      ],
+      "name": "Ghi vào ô vàng (bài mới)",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "id": "f2000000-0000-4000-8000-000000000035"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $('Chuẩn bị bài mới').first().json.row['ID'] }}",
+            "Tiêu đề": "={{ $('Chuẩn bị bài mới').first().json.row['Tiêu đề'] }}",
+            "Nội dung": "={{ $('Chuẩn bị bài mới').first().json.row['Nội dung'] }}",
+            "Trạng thái": "={{ $('Chuẩn bị bài mới').first().json.row['Trạng thái'] }}",
+            "Ghi chú": "={{ $('Chuẩn bị bài mới').first().json.row['Ghi chú'] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tiêu đề",
+              "displayName": "Tiêu đề",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nội dung",
+              "displayName": "Nội dung",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Trạng thái",
+              "displayName": "Trạng thái",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ghi chú",
+              "displayName": "Ghi chú",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        3450,
+        1400
+      ],
+      "name": "Thêm dòng mới (bài mới)",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      },
+      "id": "f2000000-0000-4000-8000-000000000036"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "oa_id",
+              "keyValue": "={{ $('Chuẩn bị bài mới').first().json.oa_id }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "name": "Lấy token (bài mới)",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3670,
+        1520
+      ],
+      "executeOnce": true,
+      "id": "f2000000-0000-4000-8000-000000000037"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token (bài mới)').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Chuẩn bị bài mới').first().json.group_id }, message: { text: $('Chuẩn bị bài mới').first().json.reply } }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "name": "Gửi tin bài mới",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3890,
+        1520
+      ],
+      "onError": "continueRegularOutput",
+      "executeOnce": true,
+      "id": "f2000000-0000-4000-8000-000000000038"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Có ảnh",
+              "leftValue": "={{ $('Chuẩn bị bài mới').first().json.ok && !!$('Chuẩn bị bài mới').first().json.url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4110,
+        1520
+      ],
+      "name": "Có ảnh kèm? (bài mới)",
+      "id": "f2000000-0000-4000-8000-000000000039"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ảnh gửi kèm /baimoi (1 hoặc nhiều) -> Đặt bộ ảnh (vuông đầu = ảnh chính, ngang đầu = bìa Zalo OA, còn lại = ảnh thêm)\nconst b = $('Chuẩn bị bài mới').first().json;\nreturn [{ json: { route: 'datanh', id: String(b.id), urls: b.urls, user_id: b.user_id, group_id: b.group_id, oa_id: b.oa_id } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4330,
+        1420
+      ],
+      "name": "Dữ liệu ảnh (bài mới)",
+      "id": "f2000000-0000-4000-8000-000000000040"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "oJHKw0fLEDVw2jI6"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        4550,
+        1420
+      ],
+      "name": "Run Đặt ảnh (bài mới)",
+      "id": "f2000000-0000-4000-8000-000000000041"
+    },
+    {
+      "parameters": {
+        "content": "## 5. Nhập bài tự viết (/baimoi)\n`/baimoi` + xuống dòng + bài (cùng 1 tin): dòng đầu = tiêu đề, **không qua AI**, gắn chữ ký GOSTECH → 1 dòng **Chờ duyệt** (ô vàng hoặc dòng mới) → báo nhóm \"BÀI #số ĐÃ NHẬP\". Có ảnh gửi kèm / gửi trước 15 phút → gọi workflow Dùng ảnh tự thiết kế để gắn ảnh bài.",
+        "height": 640,
+        "width": 2400,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2490,
+        1070
+      ],
+      "name": "Ghi chú 35",
+      "id": "f2000000-0000-4000-8000-000000000042"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dt1",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "datanh",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2500,
+        720
+      ],
+      "name": "Is Đặt ảnh?",
+      "id": "f2000000-0000-4000-8000-000000000071"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "oJHKw0fLEDVw2jI6"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        2740,
+        840
+      ],
+      "id": "f2000000-0000-4000-8000-000000000072",
+      "name": "Run Đặt ảnh"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "65ff35ec",
+              "leftValue": "={{ $json.route === 'luuanh' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        416,
+        400
+      ],
+      "id": "1dd6a2b7-cc7a-4f7d-aad8-38835cb5913c",
+      "name": "Lưu ảnh?"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "user_id": "={{ $json.user_id }}",
+            "url": "={{ $json.url }}",
+            "ts": "={{ $json.ts }}",
+            "group_id": "={{ $json.group_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "user_id",
+              "displayName": "user_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "ts",
+              "displayName": "ts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "group_id",
+              "displayName": "group_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        636,
+        200
+      ],
+      "id": "715d5f6f-7b0c-48db-a8af-2e3dccdf8477",
+      "name": "Lưu ảnh chờ"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d8297792",
+              "leftValue": "={{ !!$json.canCho }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        636,
+        500
+      ],
+      "id": "0022c45f-48ef-4ca7-af08-b91ff718544b",
+      "name": "Cần ảnh chờ?"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "user_id",
+              "keyValue": "={{ String($json.user_id) }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        856,
+        400
+      ],
+      "id": "e9907276-79ea-46ac-b0e4-3f1250fc8d74",
+      "name": "Đọc ảnh chờ",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ghép ảnh gửi trong 15 phút (theo thứ tự gửi) vào lệnh\nconst ev = $('Cần ảnh chờ?').first().json;\nconst rows = $input.all().map(i => i.json).filter(r => r && r.url && Date.now() - Number(r.ts) / 10 < 15 * 60 * 1000)\n  .sort((a, b) => Number(a.ts) - Number(b.ts) || Number(a.id) - Number(b.id));\nconst uniq = (a) => [...new Set(a.filter(Boolean))];\nconst cho = uniq(rows.map(r => r.url));\nconst o = { ...ev, soAnhCho: cho.length };\nif (['datanh', 'themanh'].includes(ev.route)) o.urls = uniq([...cho, ...(ev.urls || [])]);\nelse if (ev.route === 'baimoi') { o.urls = uniq([...cho, ...(ev.urls || [])]); o.url = o.urls[o.urls.length - 1] || ''; }\nelse if (['dunganh', 'tieude'].includes(ev.route)) { if (!ev.url && cho.length) o.url = cho[cho.length - 1]; }\nreturn [{ json: o }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1076,
+        400
+      ],
+      "id": "7ce3eb63-7b8d-483c-9035-040185362b32",
+      "name": "Gộp ảnh chờ"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "014ec94a",
+              "leftValue": "={{ $json.soAnhCho > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1296,
+        200
+      ],
+      "id": "f76a98df-f166-464d-9c77-75d6cd8853bf",
+      "name": "Có ảnh chờ?"
+    },
+    {
+      "parameters": {
+        "operation": "deleteRows",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "user_id",
+              "keyValue": "={{ String($('Gộp ảnh chờ').first().json.user_id) }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1516,
+        200
+      ],
+      "id": "f5596a3c-96f1-4726-9713-b16d9c780922",
+      "name": "Xóa ảnh chờ"
+    },
+    {
+      "parameters": {
+        "content": "## Ảnh chờ 15 phút\nẢnh gửi vào nhóm không kèm lệnh → **Lưu ảnh chờ** (Data Table `anh_cho_zalo`, mỗi ảnh 1 dòng: gửi nhiều ảnh cùng lúc không mất ảnh).\nLệnh /datanh /themanh /dunganh /baimoi /tieude → **Đọc ảnh chờ** → **Gộp ảnh chờ** (ảnh trong 15 phút, theo thứ tự gửi) → xóa ảnh đã dùng.",
+        "height": 200,
+        "width": 700,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        376,
+        -80
+      ],
+      "id": "ac6448de-0126-4fc6-bad7-a4f68672d87a",
+      "name": "Ghi chú ảnh chờ"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "rxt",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "^(xemtruoc|congkhai)$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1676,
+        140
+      ],
+      "id": "5ee5ffe3-79d2-4efb-a803-f8c8c4f6af82",
+      "name": "Is Xem trước?"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "MBIHjg9x52XH1R4i"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1896,
+        20
+      ],
+      "id": "9dfc992f-4c3d-4cb9-b713-0bf97a834c29",
+      "name": "Run Xem trước"
+    }
+  ],
+  "connections": {
+    "Zalo Events": {
+      "main": [
+        [
+          {
+            "node": "Parse Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Event": {
+      "main": [
+        [
+          {
+            "node": "Lưu ảnh?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Ads?": {
+      "main": [
+        [
+          {
+            "node": "Run Ads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Tiêu đề?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Zalo Token": {
+      "main": [
+        [
+          {
+            "node": "Send Ack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Ack": {
+      "main": [
+        [
+          {
+            "node": "Get Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Transcript": {
+      "main": [
+        [
+          {
+            "node": "Is Async Job?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Async Job?": {
+      "main": [
+        [
+          {
+            "node": "Wait 10s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Has Transcript?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 10s": {
+      "main": [
+        [
+          {
+            "node": "Poll Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Job": {
+      "main": [
+        [
+          {
+            "node": "Still Running?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still Running?": {
+      "main": [
+        [
+          {
+            "node": "Wait 10s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Has Transcript?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Transcript?": {
+      "main": [
+        [
+          {
+            "node": "Create Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Content": {
+      "main": [
+        [
+          {
+            "node": "Đọc lịch đăng (video)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Content Paid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Content Paid": {
+      "main": [
+        [
+          {
+            "node": "Đọc lịch đăng (video)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send AI Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Message": {
+      "main": [
+        [
+          {
+            "node": "Send Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Create Content",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Model Paid": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Create Content Paid",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Duyệt?": {
+      "main": [
+        [
+          {
+            "node": "Run Duyệt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Sửa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Sửa?": {
+      "main": [
+        [
+          {
+            "node": "Run Sửa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Ảnh bìa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Tiêu đề?": {
+      "main": [
+        [
+          {
+            "node": "Run AI viết bài",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Bài mới?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Ảnh bìa?": {
+      "main": [
+        [
+          {
+            "node": "Run Ảnh bìa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Dùng ảnh?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Dùng ảnh?": {
+      "main": [
+        [
+          {
+            "node": "Run Dùng ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Thêm ảnh?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Thêm ảnh?": {
+      "main": [
+        [
+          {
+            "node": "Run Thêm ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Ads?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc lịch đăng (video)": {
+      "main": [
+        [
+          {
+            "node": "Chuẩn bị dòng video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chuẩn bị dòng video": {
+      "main": [
+        [
+          {
+            "node": "Có ô vàng?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có ô vàng?": {
+      "main": [
+        [
+          {
+            "node": "Ghi vào ô vàng",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Thêm dòng mới (video)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghi vào ô vàng": {
+      "main": [
+        [
+          {
+            "node": "Split Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Thêm dòng mới (video)": {
+      "main": [
+        [
+          {
+            "node": "Split Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Bài mới?": {
+      "main": [
+        [
+          {
+            "node": "Đọc lịch đăng (bài mới)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Đặt ảnh?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc lịch đăng (bài mới)": {
+      "main": [
+        [
+          {
+            "node": "Chuẩn bị bài mới",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chuẩn bị bài mới": {
+      "main": [
+        [
+          {
+            "node": "Bài mới hợp lệ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bài mới hợp lệ?": {
+      "main": [
+        [
+          {
+            "node": "Có ô vàng? (bài mới)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lấy token (bài mới)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có ô vàng? (bài mới)": {
+      "main": [
+        [
+          {
+            "node": "Ghi vào ô vàng (bài mới)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Thêm dòng mới (bài mới)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghi vào ô vàng (bài mới)": {
+      "main": [
+        [
+          {
+            "node": "Lấy token (bài mới)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Thêm dòng mới (bài mới)": {
+      "main": [
+        [
+          {
+            "node": "Lấy token (bài mới)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy token (bài mới)": {
+      "main": [
+        [
+          {
+            "node": "Gửi tin bài mới",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gửi tin bài mới": {
+      "main": [
+        [
+          {
+            "node": "Có ảnh kèm? (bài mới)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có ảnh kèm? (bài mới)": {
+      "main": [
+        [
+          {
+            "node": "Dữ liệu ảnh (bài mới)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dữ liệu ảnh (bài mới)": {
+      "main": [
+        [
+          {
+            "node": "Run Đặt ảnh (bài mới)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Đặt ảnh?": {
+      "main": [
+        [
+          {
+            "node": "Run Đặt ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Zalo Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lưu ảnh?": {
+      "main": [
+        [
+          {
+            "node": "Lưu ảnh chờ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cần ảnh chờ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cần ảnh chờ?": {
+      "main": [
+        [
+          {
+            "node": "Đọc ảnh chờ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Xem trước?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc ảnh chờ": {
+      "main": [
+        [
+          {
+            "node": "Gộp ảnh chờ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gộp ảnh chờ": {
+      "main": [
+        [
+          {
+            "node": "Is Xem trước?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Có ảnh chờ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có ảnh chờ?": {
+      "main": [
+        [
+          {
+            "node": "Xóa ảnh chờ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Xem trước?": {
+      "main": [
+        [
+          {
+            "node": "Run Xem trước",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Duyệt?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "tags": []
+}

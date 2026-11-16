@@ -1,0 +1,832 @@
+{
+  "name": "Thêm ảnh cho bài",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        200
+      ],
+      "id": "df000000-0000-4000-8000-000000000001",
+      "name": "Khi được gọi"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<DATA_TABLE_ID>"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "oa_id",
+              "keyValue": "={{ $('Khi được gọi').first().json.oa_id }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        200
+      ],
+      "id": "df000000-0000-4000-8000-000000000002",
+      "name": "Lấy token Zalo",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        440,
+        200
+      ],
+      "id": "df000000-0000-4000-8000-000000000003",
+      "name": "Đọc lịch đăng",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// /themanh <số>: thêm các ảnh vừa gửi; /xoaanh <số> <n|het>: bỏ ảnh thêm; /xepanh <số> <thứ tự>: đổi thứ tự. Ảnh 1 = ảnh chính (cột Link ảnh), ảnh 2.. = cột Ảnh thêm\nconst cmd = $('Khi được gọi').first().json;\nconst id = String(cmd.id);\nconst row = $('Đọc lịch đăng').all().map(i => i.json).find(r => String(r['ID']) === id);\nconst bad = (reply) => [{ json: { ok: false, reply } }];\nif (!row) return bad(`❌ Không tìm thấy bài #${id} trong lịch đăng.`);\nconst st = String(row['Trạng thái'] || '').trim();\nif (cmd.route === 'xemanh') {   // chỉ xem: mọi trạng thái, ghi lại đúng giá trị cũ\n  const them0 = String(row['Ảnh thêm'] || '').split('\\n').map(s => s.trim()).filter(Boolean);\n  const anh0 = String(row['Link ảnh'] || '').trim();\n  if (!anh0 && !them0.length) return bad(`ℹ️ Bài #${id} chưa có ảnh nào. Gửi ảnh rồi gõ /datanh ${id}.`);\n  return [{ json: { ok: true, id, them: them0, curAnh: anh0, curBia: String(row['Ảnh bìa OA'] || '').trim(), curZalo: String(row['Ảnh Zalo'] || '').trim(), note0: String(row['Ghi chú'] || '').trim(), st, mode: 'xem', moi: them0, viec: 'xem ảnh' } }];\n}\nif (!['Chờ duyệt', 'Chờ đăng'].includes(st)) return bad(`ℹ️ Bài #${id} đang \"${st || 'trống'}\" nên không đổi ảnh được.`);\nconst them = String(row['Ảnh thêm'] || '').split('\\n').map(s => s.trim()).filter(Boolean);\nconst base = { ok: true, id, them, curAnh: String(row['Link ảnh'] || '').trim(), curBia: String(row['Ảnh bìa OA'] || '').trim(), curZalo: String(row['Ảnh Zalo'] || '').trim(), note0: String(row['Ghi chú'] || '').trim() };\nif (cmd.route === 'xoaanh') {\n  const a = String(cmd.arg || '').trim().toLowerCase();\n  if (!them.length) return bad(`ℹ️ Bài #${id} chưa có ảnh thêm nào.`);\n  let moi;\n  if (/^(het|hết|all|tatca|tất cả|tat ca)$/.test(a)) moi = [];\n  else {\n    const n = Number(a);\n    if (!n) return bad(`ℹ️ Gõ: /xoaanh ${id} <số ảnh> (ví dụ /xoaanh ${id} 3) hoặc /xoaanh ${id} het\\n(Xem số ảnh: ảnh 1 là ảnh chính, ảnh 2–${them.length + 1} là ảnh thêm)`);\n    if (n === 1) return bad(`ℹ️ Ảnh 1 là ảnh chính, không xóa được. Muốn đổi ảnh chính: gửi ảnh rồi gõ /dunganh ${id}`);\n    if (n < 2 || n > them.length + 1) return bad(`ℹ️ Bài #${id} chỉ có ảnh 1–${them.length + 1}.`);\n    moi = them.filter((_, i) => i !== n - 2);\n  }\n  return [{ json: { ...base, mode: 'xoa', moi, viec: /^\\d+$/.test(a) ? `bỏ ảnh ${a}` : 'bỏ hết ảnh thêm' } }];\n}\nif (cmd.route === 'xepanh') {\n  // Danh sách như ảnh lưới: ảnh 1 = ảnh chính, ảnh 2.. = Ảnh thêm (giữ nhãn #fb/#zalo)\n  const ds = [base.curAnh, ...them].filter(Boolean);\n  const so = String(cmd.arg || '').split(/[^0-9]+/).filter(Boolean).map(Number);\n  const huongDan = `ℹ️ Gõ: /xepanh ${id} <thứ tự mới>, ví dụ /xepanh ${id} 2 1 (ảnh 2 lên làm ảnh 1)\\nSố đầu = ảnh 1 mới (ảnh chính); ảnh không ghi giữ thứ tự cũ, đứng sau.`;\n  if (ds.length < 2) return bad(`ℹ️ Bài #${id} có ${ds.length} ảnh, chưa có gì để đổi thứ tự.`);\n  if (!so.length) return bad(huongDan);\n  const sai = so.filter(n => n < 1 || n > ds.length); if (sai.length) return bad(`ℹ️ Bài #${id} chỉ có ảnh 1–${ds.length} (bạn ghi: ${sai.join(', ')}).\\n` + huongDan);\n  if (new Set(so).size !== so.length) return bad(`ℹ️ Mỗi số ảnh chỉ ghi 1 lần.\\n` + huongDan);\n  const thuTu = [...so, ...ds.map((_, i) => i + 1).filter(n => !so.includes(n))];\n  const moiDs = thuTu.map(n => ds[n - 1]);\n  moiDs[0] = String(moiDs[0]).replace(/#(fb|zalo)$/i, '');   // ảnh nào làm ảnh chính cũng được (yêu cầu 16/11), ảnh chính dùng chung 2 kênh\n  if (thuTu.every((n, i) => n === i + 1)) return bad(`ℹ️ Thứ tự ảnh bài #${id} không đổi.`);\n  const nhacBia = /#src=/.test(base.curBia) && moiDs[0] !== base.curAnh ? `\\n⚠️ Ảnh bìa Zalo OA đang do AI làm từ ảnh chính cũ: gõ /anhbia ${id} để làm lại theo ảnh chính mới (hoặc gửi ảnh ngang + /dunganh ${id}).` : '';\n  return [{ json: { ...base, mode: 'xep', linkAnhMoi: moiDs[0], moi: moiDs.slice(1), nhacBia, viec: 'đổi thứ tự ảnh (' + thuTu.map((n, i) => n !== i + 1 ? `ảnh ${i + 1} mới = ảnh ${n} cũ` : '').filter(Boolean).join('; ') + ')' } }];\n}\nconst urls = (cmd.urls || []).filter(Boolean);\nif (!urls.length) return bad(`ℹ️ Chưa thấy ảnh nào để thêm vào bài #${id}.\\n📎 Gửi ảnh (hoặc file ảnh, gửi nhiều ảnh một lúc cũng được) vào nhóm rồi gõ /themanh ${id} trong vòng 15 phút.`);\nconst con = 9 - them.length;   // Facebook: tối đa 10 ảnh/bài\nif (con <= 0) return bad(`ℹ️ Bài #${id} đã đủ 10 ảnh (tối đa của Facebook). Bỏ bớt bằng /xoaanh ${id} <số ảnh>.`);\nreturn urls.slice(0, con).map(url => ({ json: { ...base, mode: 'them', url, boQua: Math.max(0, urls.length - con) } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        200
+      ],
+      "id": "df000000-0000-4000-8000-000000000004",
+      "name": "Kiểm tra lệnh"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c5",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        200
+      ],
+      "id": "df000000-0000-4000-8000-000000000005",
+      "name": "Hợp lệ?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Khi được gọi').first().json.group_id }, message: { text: $('Kiểm tra lệnh').first().json.reply } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        460
+      ],
+      "id": "df000000-0000-4000-8000-000000000006",
+      "name": "Trả lời lỗi"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c7",
+              "leftValue": "={{ $json.mode === 'them' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        200
+      ],
+      "id": "df000000-0000-4000-8000-000000000007",
+      "name": "Thêm ảnh?"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        60
+      ],
+      "id": "df000000-0000-4000-8000-000000000008",
+      "name": "Tải ảnh gửi"
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "POST",
+        "graphApiVersion": "v23.0",
+        "node": "<FACEBOOK_PAGE_ID>",
+        "edge": "photos",
+        "sendBinaryData": true,
+        "binaryPropertyName": "data",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "published",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        2860,
+        60
+      ],
+      "id": "df000000-0000-4000-8000-000000000009",
+      "name": "Tải ảnh lên Trang (ẩn)",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Graph API"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "graphApiVersion": "v23.0",
+        "node": "={{ $json.id }}",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "fields",
+                "value": "images"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        3080,
+        60
+      ],
+      "id": "df000000-0000-4000-8000-000000000010",
+      "name": "Lấy link ảnh",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "",
+          "name": "Facebook Graph API"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Danh sách ảnh thêm mới (thêm hoặc xóa)\nconst k = $('Kiểm tra lệnh').first().json;\nlet moi = null, them = 0, linkAnh = k.linkAnhMoi || k.curAnh || '', bia = k.curBia || ''; const dien = [];\ntry { if ($('Lấy link ảnh').isExecuted) {\n  const add = $('Lấy link ảnh').all().map(i => ((i.json.images || []).sort((a, b) => b.width - a.width)[0] || {}).source).filter(Boolean);\n  // /themanh <số> fb|zalo: gắn nhãn kênh vào cuối link (#fb chỉ Fanpage, #zalo chỉ Zalo)\n  const kenh = $('Khi được gọi').first().json.kenh || '';\n  // Bài chưa có ảnh chính / ảnh bìa: ảnh vuông đầu = ảnh chính, ảnh ngang đầu = ảnh bìa Zalo OA (+ album Fanpage, #fb để Zalo không lặp)\n  const sz = $('Đo kích thước').all().map(i => i.json);\n  let ds = add.map((u, i) => ({ u, ngang: !!(sz[i]?.w && sz[i]?.h && sz[i].w / sz[i].h >= 1.3) }));\n  if (!kenh && !k.curAnh) { const v = ds.find(x => !x.ngang); if (v) { linkAnh = v.u; ds = ds.filter(x => x !== v); dien.push('ảnh vuông đầu tiên làm ẢNH CHÍNH (bài chưa có ảnh chính)'); } }\n  if (!kenh && !k.curBia) { const n = ds.find(x => x.ngang); if (n) { bia = n.u + '#tay'; n.fb = true; dien.push('ảnh ngang đầu tiên làm ẢNH BÌA ZALO OA (vẫn ở album Fanpage)'); } }\n  moi = [...k.them, ...ds.map(x => x.fb ? x.u + '#fb' : kenh ? x.u + '#' + kenh : x.u)]; them = add.length;\n} } catch (e) {}\nif (!moi) moi = k.moi || k.them;\nconst now = DateTime.now().setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm');\nconst kn = $('Khi được gọi').first().json.kenh || '';\nconst viec = k.mode === 'xoa' || k.mode === 'xep' ? k.viec : `thêm ${them} ảnh${kn === 'fb' ? ' (chỉ Fanpage)' : kn === 'zalo' ? ' (chỉ Zalo)' : ''}`;\nlet trungMsg = ''; try { if ($('Bỏ ảnh trùng').isExecuted) trungMsg = $('Bỏ ảnh trùng').first().json.trungMsg || ''; } catch (e) {}\nconst dienMsg = (dien.length ? '\\n📌 Đã dùng ' + dien.join('; ') + '.' : '') + (k.nhacBia || '') + (k.mode === 'xep' ? '\\n📍 Nhớ sửa lại các dòng [ảnh N] trong bài (nếu có) theo số mới.' : '');\nreturn [{ json: { id: k.id, moi, them, linkAnh, bia, trungMsg, dienMsg, viec, boQua: k.boQua || 0, note: k.mode === 'xem' ? k.note0 : [k.note0, `Ảnh thêm qua Zalo ${now}: ${viec}`].filter(Boolean).join(' | ') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        200
+      ],
+      "id": "df000000-0000-4000-8000-000000000011",
+      "name": "Danh sách mới"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "<GOOGLE_SHEET_ID>",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1163534140,
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ảnh thêm",
+              "displayName": "Ảnh thêm",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ghi chú",
+              "displayName": "Ghi chú",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Link ảnh",
+              "displayName": "Link ảnh",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ảnh bìa OA",
+              "displayName": "Ảnh bìa OA",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "value": {
+            "ID": "={{ $json.id }}",
+            "Ảnh thêm": "={{ $json.moi.join('\\n') }}",
+            "Ghi chú": "={{ $json.note }}",
+            "Link ảnh": "={{ $json.linkAnh }}",
+            "Ảnh bìa OA": "={{ $json.bia }}"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        3520,
+        200
+      ],
+      "id": "df000000-0000-4000-8000-000000000012",
+      "name": "Ghi vào Sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tất cả ảnh của bài (ảnh 1 = ảnh chính) -> 1 ảnh lưới có số thứ tự (Zalo chỉ hiện 1 ảnh mỗi tin)\nconst g = $('Danh sách mới').first().json;\nconst k = $('Kiểm tra lệnh').first().json;\nconst all = [g.linkAnh, ...g.moi].filter(Boolean);\nconst sach = (u) => String(u || '').trim().replace(/#(fb|zalo|tay|src=[a-z0-9]+)$/i, '');\nconst bia = sach(g.bia || k.curBia);\nconst ds = all.map((u, i) => ({ n: i + 1, kenh: (String(u).match(/#(fb|zalo)$/i) || [])[1] || '', laBia: !!bia && sach(u) === bia }));\nreturn [{ json: { urls: all.map(u => String(u).replace(/#(fb|zalo)$/i, '')), ds, oa_id: $('Khi được gọi').first().json.oa_id } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3740,
+        200
+      ],
+      "id": "df000000-0000-4000-8000-000000000013",
+      "name": "DS ảnh để xem"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tin xác nhận: 1 ảnh lưới đánh số + danh sách ảnh\nconst g = $('Danh sách mới').first().json;\nconst ds = $('DS ảnh để xem').first().json.ds || [];\nlet att = null; try { att = $input.first().json.attachment_id || null; } catch (e) {}\nconst tong = ds.length;\nconst list = ds.map(x => `Ảnh ${x.n}${x.n === 1 ? ' (ảnh chính)' : ''}${x.laBia ? ' – ảnh bìa Zalo OA + đầu album Fanpage' : x.kenh === 'fb' ? ' – chỉ Fanpage' : x.kenh === 'zalo' ? ' – chỉ Zalo' : ''}`).join('\\n');\nconst k0 = $('Kiểm tra lệnh').first().json;\nconst biaNgoai = !ds.some(x => x.laBia) ? (k0.curBia ? '\\nẢnh bìa Zalo OA: ảnh riêng (không nằm trong album, xem bằng /xem ' + g.id + ' bia 1)' : '\\n⚠️ Chưa có ảnh bìa Zalo OA') : '';\nconst zaloRieng = k0.curZalo ? '\\nZalo dùng ảnh chính riêng (cột Ảnh Zalo) thay cho ảnh 1.' : '';\nconst text = (k0.mode === 'xem' ? `🖼️ BÀI #${g.id} (${k0.st || ''}) hiện có ${tong} ảnh${tong > 1 ? ' – Fanpage đăng dạng album' : ''}.` : `🖼️ BÀI #${g.id}: đã ${g.viec}. Bài hiện có ${tong} ảnh${tong > 1 ? ' – Fanpage sẽ đăng dạng album nhiều ảnh' : ''}.`)\n  + (g.dienMsg || '') + (g.trungMsg || '')\n  + (g.boQua ? `\\n⚠️ Bỏ qua ${g.boQua} ảnh vì Facebook chỉ cho tối đa 10 ảnh/bài.` : '')\n  + `\\n${list}` + biaNgoai + zaloRieng + (att ? '\\n(Số trên ảnh = số thứ tự ảnh)' : '\\n⚠️ Chưa ghép được ảnh xem trước, xem ảnh ở cột Ảnh thêm trong Sheet.');\nconst msgs = [att ? { text, attachment: { type: 'template', payload: { template_type: 'media', elements: [{ media_type: 'image', attachment_id: att }] } } } : { text }];\nmsgs.push({ text: `➕ Thêm nữa: gửi ảnh rồi gõ /themanh ${g.id} (thêm \"fb\" hoặc \"zalo\" sau số bài nếu ảnh chỉ dùng cho 1 kênh)\\n➖ Bỏ ảnh: /xoaanh ${g.id} <số ảnh> hoặc /xoaanh ${g.id} het\\n🔁 Đổi ảnh chính (ảnh 1): gửi ảnh rồi gõ /dunganh ${g.id}\\n🔀 Đổi thứ tự: /xepanh ${g.id} 2 1 (số đầu = ảnh 1 mới)\\n📍 Muốn ảnh nằm đúng chỗ trong bài Zalo OA: thêm dòng [ảnh 2] (số trên ảnh lưới) vào chỗ đó bằng /dungbai ${g.id}` });\nreturn msgs.map(message => ({ json: { message } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4400,
+        200
+      ],
+      "id": "df000000-0000-4000-8000-000000000016",
+      "name": "Soạn tin"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Khi được gọi').first().json.group_id }, message: $json.message }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4620,
+        200
+      ],
+      "id": "df000000-0000-4000-8000-000000000017",
+      "name": "Gửi vào nhóm"
+    },
+    {
+      "parameters": {
+        "content": "## Thêm ảnh cho bài (1 bài nhiều ảnh)\n**/themanh <số>**: thêm các ảnh vừa gửi vào nhóm (15 phút, gửi nhiều ảnh/file một lúc được). **/xoaanh <số> <n|het>**: bỏ ảnh thêm.\nẢnh 1 = ảnh chính (cột Link ảnh), ảnh 2.. lưu cột **Ảnh thêm** (mỗi dòng 1 link, tối đa 9). Lúc đăng: Fanpage đăng album, Zalo OA chèn vào thân bài, nhóm gửi đủ ảnh.",
+        "height": 760,
+        "width": 3560,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -200
+      ],
+      "id": "df000000-0000-4000-8000-000000000040",
+      "name": "📌 1"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "87eNCWaItJH4dBgB"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        3960,
+        200
+      ],
+      "id": "e6000000-0000-4000-8000-000000000001",
+      "name": "Ghép ảnh xem",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Đọc kích thước từng ảnh từ file (JPEG / PNG / WebP / GIF)\nfunction size(b) {\n  if (b[0] === 0x89 && b[1] === 0x50) return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };            // PNG\n  if (b.toString('ascii', 0, 3) === 'GIF') return { width: b.readUInt16LE(6), height: b.readUInt16LE(8) };          // GIF\n  if (b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP') {                             // WebP\n    const t = b.toString('ascii', 12, 16);\n    if (t === 'VP8X') return { width: 1 + b.readUIntLE(24, 3), height: 1 + b.readUIntLE(27, 3) };\n    if (t === 'VP8 ') return { width: b.readUInt16LE(26) & 0x3fff, height: b.readUInt16LE(28) & 0x3fff };\n    if (t === 'VP8L') { const n = b.readUInt32LE(21); return { width: (n & 0x3fff) + 1, height: ((n >> 14) & 0x3fff) + 1 }; }\n  }\n  if (b[0] === 0xff && b[1] === 0xd8) {                                                                              // JPEG: tìm khung SOF\n    let i = 2;\n    while (i < b.length - 9) {\n      if (b[i] !== 0xff) { i++; continue; }\n      const m = b[i + 1];\n      if (m >= 0xc0 && m <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(m)) return { width: b.readUInt16BE(i + 7), height: b.readUInt16BE(i + 5) };\n      if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; }\n      i += 2 + b.readUInt16BE(i + 2);\n    }\n  }\n  return null;\n}\n\nconst out = [];\nfor (let i = 0; i < $input.all().length; i++) {\n  const it = $input.all()[i];\n  let s = null; try { s = size(await this.helpers.getBinaryDataBuffer(i, 'data')); } catch (e) {}\n  out.push({ json: { w: s?.width || 0, h: s?.height || 0 }, binary: it.binary });\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "name": "Đo kích thước",
+      "position": [
+        2640,
+        60
+      ],
+      "id": "6ae36314-a2df-4bb4-ab97-004554808a08"
+    },
+    {
+      "parameters": {
+        "jsCode": "// So ảnh vừa gửi với ảnh đang có trong bài (ảnh chính, bìa OA, ảnh Zalo, ảnh thêm) và với nhau\nconst ks = $('Kiểm tra lệnh').all().map(i => i.json); const f = ks[0];\nconst cu = [], nhan = [];\nconst add = (u, t) => { if (u) { cu.push(u); nhan.push(t); } };\nadd(f.curAnh, 'ảnh chính'); add(f.curBia, 'ảnh bìa Zalo OA'); add(f.curZalo, 'ảnh riêng Zalo');\nf.them.forEach((u, i) => add(u, `ảnh ${i + 2}`));\nreturn [{ json: { cu, nhan, moi: ks.map(x => x.url) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        60
+      ],
+      "id": "6a4c06a5-f02e-4a09-9d9c-4c103978adf6",
+      "name": "Chuẩn bị kiểm trùng"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "N5ZYrd8Ux65KEPpi"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1540,
+        60
+      ],
+      "id": "3e42990f-fedf-4299-a93d-f47366951484",
+      "name": "Kiểm trùng",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Bỏ ảnh đã có trong bài / gửi lặp; hết ảnh mới thì báo lại\nconst ks = $('Kiểm tra lệnh').all().map(i => i.json);\nconst nhan = $('Chuẩn bị kiểm trùng').first().json.nhan;\nlet tr = []; try { tr = $input.first().json.trung || []; } catch (e) {}\nconst bo = new Map(tr.map(t => [t.moi, t]));\nconst moTa = [...bo.entries()].map(([i, t]) => `ảnh gửi thứ ${i + 1} trùng ${t.nhom === 'cu' ? nhan[t.vt] : 'ảnh gửi thứ ' + (t.vt + 1)}`);\nconst giu = ks.filter((_, i) => !bo.has(i));\nif (!giu.length) return [{ json: { ok: false, reply: `ℹ️ Ảnh vừa gửi đã có trong bài #${ks[0].id} rồi (${moTa.join('; ')}) nên không thêm nữa.\\n📎 Muốn thêm ảnh khác: gửi ảnh mới rồi gõ /themanh ${ks[0].id}` } }];\nconst trungMsg = moTa.length ? `\\n♻️ Bỏ qua ${moTa.length} ảnh trùng (${moTa.join('; ')}).` : '';\nreturn giu.map(x => ({ json: { ...x, ok: true, trungMsg } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        60
+      ],
+      "id": "17364a56-35d3-4213-84fc-61ead786be92",
+      "name": "Bỏ ảnh trùng"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ct1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1980,
+        60
+      ],
+      "id": "a0fa125b-18a8-4bc4-9384-6708b342cbc5",
+      "name": "Còn ảnh mới?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token Zalo').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { group_id: $('Khi được gọi').first().json.group_id }, message: { text: $('Bỏ ảnh trùng').first().json.reply } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        -160
+      ],
+      "id": "9e701127-86ef-4e03-a190-11c7e0d67f84",
+      "name": "Trả lời trùng"
+    }
+  ],
+  "connections": {
+    "Khi được gọi": {
+      "main": [
+        [
+          {
+            "node": "Lấy token Zalo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy token Zalo": {
+      "main": [
+        [
+          {
+            "node": "Đọc lịch đăng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc lịch đăng": {
+      "main": [
+        [
+          {
+            "node": "Kiểm tra lệnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kiểm tra lệnh": {
+      "main": [
+        [
+          {
+            "node": "Hợp lệ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hợp lệ?": {
+      "main": [
+        [
+          {
+            "node": "Thêm ảnh?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trả lời lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Thêm ảnh?": {
+      "main": [
+        [
+          {
+            "node": "Chuẩn bị kiểm trùng",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Danh sách mới",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh gửi": {
+      "main": [
+        [
+          {
+            "node": "Đo kích thước",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh lên Trang (ẩn)": {
+      "main": [
+        [
+          {
+            "node": "Lấy link ảnh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy link ảnh": {
+      "main": [
+        [
+          {
+            "node": "Danh sách mới",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Danh sách mới": {
+      "main": [
+        [
+          {
+            "node": "Ghi vào Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghi vào Sheet": {
+      "main": [
+        [
+          {
+            "node": "DS ảnh để xem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DS ảnh để xem": {
+      "main": [
+        [
+          {
+            "node": "Ghép ảnh xem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin": {
+      "main": [
+        [
+          {
+            "node": "Gửi vào nhóm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghép ảnh xem": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chuẩn bị kiểm trùng": {
+      "main": [
+        [
+          {
+            "node": "Kiểm trùng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kiểm trùng": {
+      "main": [
+        [
+          {
+            "node": "Bỏ ảnh trùng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bỏ ảnh trùng": {
+      "main": [
+        [
+          {
+            "node": "Còn ảnh mới?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Còn ảnh mới?": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh gửi",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trả lời trùng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đo kích thước": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh lên Trang (ẩn)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "tags": []
+}
